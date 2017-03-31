@@ -23,7 +23,7 @@
         <junit.version>4.12</junit.version>
         <hazelcast.version>3.8-SNAPSHOT</hazelcast.version>
         <hadoop.version>2.7.2</hadoop.version>
-        <jet.version>0.3.1</jet.version>
+        <jet.version>0.4-SNAPSHOT</jet.version>
         <flink.version>1.2.0</flink.version>
         <spark.version>2.1.0</spark.version>
     </properties>

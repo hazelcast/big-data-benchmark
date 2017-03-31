@@ -32,7 +32,10 @@ public class TradeProducer {
 
     public static void main(String[] args) throws Exception {
         TradeProducer tradeProducer = new TradeProducer(args[0]);
-        tradeProducer.produce(args[1], Long.parseLong(args[2]));
+
+        for (int i = 0; i < 1000; i++) {
+            tradeProducer.produce(args[1], i * 1000, Long.parseLong(args[2]));
+        }
         tradeProducer.close();
     }
 
@@ -41,10 +44,10 @@ public class TradeProducer {
         producer.close();
     }
 
-    private void produce(String topic, long count) {
+    private void produce(String topic, long time, long count) {
         for (long i = 0; i < count; i++) {
-            Trade trade = nextTrade();
-            producer.send(new ProducerRecord<>(topic, trade.getTime(), trade));
+            Trade trade = nextTrade(time);
+            producer.send(new ProducerRecord<>(topic, trade));
         }
         System.out.println("Produced " + count + " trades to topic " + topic);
     }
@@ -55,15 +58,15 @@ public class TradeProducer {
         tickers = tickersToPrice.keySet().toArray(new String[0]);
     }
 
-    private Trade nextTrade() {
+    private Trade nextTrade(long time) {
         String ticker = tickers[tickerIndex++];
         if (tickerIndex == tickers.length) {
             tickerIndex = 0;
         }
-        lag++;
-        if (lag == 2000) {
-            lag = 0;
-        }
-        return new Trade(System.currentTimeMillis() - lag, ticker, 100, 10000);
+//        lag++;
+//        if (lag == 2000) {
+//            lag = 0;
+//        }
+        return new Trade(time, ticker, 100, 10000);
     }
 }
