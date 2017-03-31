@@ -1,0 +1,20 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<project xmlns="http://maven.apache.org/POM/4.0.0"
+         xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"
+         xsi:schemaLocation="http://maven.apache.org/POM/4.0.0 http://maven.apache.org/xsd/maven-4.0.0.xsd">
+    <modelVersion>4.0.0</modelVersion>
+    <parent>
+        <artifactId>big-data-benchmark</artifactId>
+        <groupId>com.hazelcast.jet.benchmark</groupId>
+        <version>0.1-SNAPSHOT</version>
+    </parent>
+    <packaging>pom</packaging>
+    <artifactId>word-count</artifactId>
+    <modules>
+        <module>word-generator</module>
+        <module>hadoop-word-count</module>
+        <module>jet-word-count</module>
+        <module>spark-word-count</module>
+        <module>flink-word-count</module>
+    </modules>
+</project>

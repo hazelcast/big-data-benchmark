@@ -2,18 +2,14 @@
 <project xmlns="http://maven.apache.org/POM/4.0.0"
          xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"
          xsi:schemaLocation="http://maven.apache.org/POM/4.0.0 http://maven.apache.org/xsd/maven-4.0.0.xsd">
-    <groupId>com.hazelcast</groupId>
+    <groupId>com.hazelcast.jet.benchmark</groupId>
     <artifactId>big-data-benchmark</artifactId>
     <packaging>pom</packaging>
     <version>0.1-SNAPSHOT</version>
     <name>big-data-benchmark</name>
 
     <modules>
-        <module>hadoop-word-count</module>
-        <module>jet-word-count</module>
-        <module>flink-word-count</module>
-        <module>spark-word-count</module>
-        <module>source-generator</module>
+        <module>word-count</module>
     </modules>
     <properties>
         <main.basedir>${project.basedir}</main.basedir>
@@ -27,7 +23,7 @@
         <junit.version>4.12</junit.version>
         <hazelcast.version>3.8-SNAPSHOT</hazelcast.version>
         <hadoop.version>2.7.2</hadoop.version>
-        <jet.version>0.3</jet.version>
+        <jet.version>0.3.1</jet.version>
         <flink.version>1.2.0</flink.version>
         <spark.version>2.1.0</spark.version>
     </properties>
