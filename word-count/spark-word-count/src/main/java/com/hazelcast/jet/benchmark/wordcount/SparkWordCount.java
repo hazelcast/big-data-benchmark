@@ -1,4 +1,4 @@
-package com.hazelcast.jet.benchmark.spark;
+package com.hazelcast.jet.benchmark.wordcount;
 
 import org.apache.spark.SparkConf;
 import org.apache.spark.api.java.JavaPairRDD;

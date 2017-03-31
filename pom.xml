@@ -6,10 +6,10 @@
     <artifactId>big-data-benchmark</artifactId>
     <packaging>pom</packaging>
     <version>0.1-SNAPSHOT</version>
-    <name>big-data-benchmark</name>
 
     <modules>
         <module>word-count</module>
+        <module>trade-monitor</module>
     </modules>
     <properties>
         <main.basedir>${project.basedir}</main.basedir>
@@ -85,6 +85,11 @@
             <dependency>
                 <groupId>com.hazelcast.jet</groupId>
                 <artifactId>hazelcast-jet-hadoop</artifactId>
+                <version>${jet.version}</version>
+            </dependency>
+            <dependency>
+                <groupId>com.hazelcast.jet</groupId>
+                <artifactId>hazelcast-jet-kafka</artifactId>
                 <version>${jet.version}</version>
             </dependency>
             <dependency>

@@ -1,4 +1,4 @@
-package com.hazelcast.jet.benchmark.hadoop;
+package com.hazelcast.jet.benchmark.wordcount;
 
 import org.apache.hadoop.conf.Configuration;
 import org.apache.hadoop.fs.Path;

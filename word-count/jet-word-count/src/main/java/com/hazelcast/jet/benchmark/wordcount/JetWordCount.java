@@ -1,4 +1,4 @@
-package com.hazelcast.jet.benchmark;
+package com.hazelcast.jet.benchmark.wordcount;
 
 import com.hazelcast.jet.DAG;
 import com.hazelcast.jet.Edge;

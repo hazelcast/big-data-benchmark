@@ -16,7 +16,7 @@
  * limitations under the License.
  */
 
-package com.hazelcast.jet.benchmark.flink;
+package com.hazelcast.jet.benchmark.wordcount;
 
 import org.apache.flink.api.common.typeinfo.TypeHint;
 import org.apache.flink.api.java.DataSet;

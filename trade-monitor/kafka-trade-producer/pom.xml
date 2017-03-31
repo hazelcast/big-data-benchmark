@@ -1,12 +1,12 @@
 <project xmlns="http://maven.apache.org/POM/4.0.0" xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"
          xsi:schemaLocation="http://maven.apache.org/POM/4.0.0 http://maven.apache.org/xsd/maven-4.0.0.xsd">
     <modelVersion>4.0.0</modelVersion>
-    <artifactId>jet-word-count</artifactId>
+    <artifactId>kafka-trade-producer</artifactId>
     <packaging>jar</packaging>
 
     <parent>
         <groupId>com.hazelcast.jet.benchmark</groupId>
-        <artifactId>word-count</artifactId>
+        <artifactId>trade-monitor</artifactId>
         <version>0.1-SNAPSHOT</version>
     </parent>
 
@@ -18,7 +18,7 @@
                 <configuration>
                     <archive>
                         <manifest>
-                            <mainClass>com.hazelcast.jet.benchmark.wordcount.JetWordCount</mainClass>
+                            <mainClass>com.hazelcast.jet.benchmark.kafka.TradeGenerator</mainClass>
                         </manifest>
                     </archive>
                 </configuration>
@@ -28,23 +28,14 @@
 
     <dependencies>
         <dependency>
-            <groupId>com.hazelcast.jet</groupId>
-            <artifactId>hazelcast-jet-hadoop</artifactId>
+            <groupId>org.apache.kafka</groupId>
+            <artifactId>kafka-clients</artifactId>
+            <version>0.10.2.0</version>
         </dependency>
         <dependency>
-            <groupId>org.apache.hadoop</groupId>
-            <artifactId>hadoop-hdfs</artifactId>
-            <scope>provided</scope>
-        </dependency>
-        <dependency>
-            <groupId>org.apache.hadoop</groupId>
-            <artifactId>hadoop-common</artifactId>
-            <scope>provided</scope>
-        </dependency>
-        <dependency>
-            <groupId>org.apache.hadoop</groupId>
-            <artifactId>hadoop-mapreduce-client-core</artifactId>
-            <scope>provided</scope>
+            <groupId>org.slf4j</groupId>
+            <artifactId>slf4j-simple</artifactId>
+            <version>1.7.21</version>
         </dependency>
     </dependencies>
 </project>
