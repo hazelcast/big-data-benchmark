@@ -15,7 +15,7 @@ public class TradeTestConsumer {
     public static void main(String[] args) throws Exception {
         Properties props = new Properties();
         props.setProperty("bootstrap.servers", args[0]);
-        props.setProperty("group.id", "2");
+        props.setProperty("group.id", UUID.randomUUID().toString());
         props.setProperty("key.deserializer", LongDeserializer.class.getName());
         props.setProperty("value.deserializer", TradeDeserializer.class.getName());
         props.setProperty("auto.offset.reset", "earliest");
@@ -27,14 +27,12 @@ public class TradeTestConsumer {
         long count = 0;
         while (true) {
             ConsumerRecords<Long, Trade> poll = consumer.poll(5000);
-            long min = Long.MAX_VALUE;
-            long max = Long.MIN_VALUE;
             for (ConsumerRecord<Long, Trade> r : poll) {
-                min = Math.min(r.value().getTime(), min);
-                max = Math.max(r.value().getTime(), max);
+                if (r.value().getTime() < 990) {
+                    count++;
+                }
             }
-            System.out.println("Polled " + poll.count() + " records. Total consumed = " + (count += poll.count()) + "" +
-                    " min=" +min + " max=" + max);
+            System.out.println(count);
         }
     }
 

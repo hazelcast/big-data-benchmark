@@ -5,9 +5,10 @@ import org.apache.kafka.common.serialization.Deserializer;
 import java.io.ByteArrayInputStream;
 import java.io.DataInputStream;
 import java.io.IOException;
+import java.io.Serializable;
 import java.util.Map;
 
-public class TradeDeserializer implements Deserializer<Trade> {
+public class TradeDeserializer implements Deserializer<Trade>, Serializable {
 
     @Override
     public void configure(Map<String, ?> configs, boolean isKey) {

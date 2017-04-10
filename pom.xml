@@ -26,6 +26,8 @@
         <jet.version>0.4-SNAPSHOT</jet.version>
         <flink.version>1.2.0</flink.version>
         <spark.version>2.1.0</spark.version>
+        <kafka.version>0.10.0</kafka.version>
+        <scala.version>2.11</scala.version>
     </properties>
 
     <repositories>
@@ -119,17 +121,17 @@
             </dependency>
             <dependency>
                 <groupId>org.apache.flink</groupId>
-                <artifactId>flink-streaming-java_2.11</artifactId>
+                <artifactId>flink-streaming-java_${scala.version}</artifactId>
                 <version>${flink.version}</version>
             </dependency>
             <dependency>
                 <groupId>org.apache.flink</groupId>
-                <artifactId>flink-clients_2.11</artifactId>
+                <artifactId>flink-clients_${scala.version}</artifactId>
                 <version>${flink.version}</version>
             </dependency>
             <dependency>
                 <groupId>org.apache.spark</groupId>
-                <artifactId>spark-core_2.11</artifactId>
+                <artifactId>spark-core_${scala.version}</artifactId>
                 <version>${spark.version}</version>
             </dependency>
         </dependencies>

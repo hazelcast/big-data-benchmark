@@ -31,10 +31,15 @@ public class TradeProducer {
     }
 
     public static void main(String[] args) throws Exception {
-        TradeProducer tradeProducer = new TradeProducer(args[0]);
+        String broker = args[0];
+        String topic = args[1];
+        long tradersPerSecond = Long.parseLong(args[2]);
+        int numSeconds = 1000;
 
-        for (int i = 0; i < 1000; i++) {
-            tradeProducer.produce(args[1], i * 1000, Long.parseLong(args[2]));
+        TradeProducer tradeProducer = new TradeProducer(broker);
+
+        for (int i = 0; i < numSeconds; i++) {
+            tradeProducer.produce(topic, i, tradersPerSecond);
         }
         tradeProducer.close();
     }
