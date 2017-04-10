@@ -9,7 +9,9 @@ import com.hazelcast.jet.Punctuation;
 import com.hazelcast.jet.StreamingProcessorBase;
 import com.hazelcast.jet.Vertex;
 import com.hazelcast.jet.windowing.Frame;
-import com.hazelcast.jet.windowing.InsertPunctuationP;
+import com.hazelcast.jet.windowing.WindowDefinition;
+import com.hazelcast.jet.windowing.WindowMaker;
+import com.hazelcast.jet.windowing.WindowingProcessors;
 import org.apache.kafka.common.serialization.LongDeserializer;
 
 import java.util.Map;
@@ -22,13 +24,18 @@ import static com.hazelcast.jet.Partitioner.HASH_CODE;
 import static com.hazelcast.jet.Processors.map;
 import static com.hazelcast.jet.connector.kafka.ReadKafkaP.readKafka;
 import static com.hazelcast.jet.stream.DistributedCollectors.counting;
-import static com.hazelcast.jet.windowing.FrameProcessors.groupByFrame;
-import static com.hazelcast.jet.windowing.FrameProcessors.slidingWindow;
 import static com.hazelcast.jet.windowing.PunctuationKeepers.cappingEventSeqLag;
+import static com.hazelcast.jet.windowing.WindowingProcessors.insertPunctuation;
+import static com.hazelcast.jet.windowing.WindowingProcessors.slidingWindow;
 
 public class JetTradeMonitor {
 
     public static void main(String[] args) throws Exception {
+        if (args.length != 2) {
+            System.err.println("Usage:");
+            System.err.println("  TradeProducer <bootstrap.servers> <topic>");
+            System.exit(1);
+        }
         System.setProperty("hazelcast.logging.type", "log4j");
         String brokerUri = args[0];
         String topic = args[1];
@@ -39,16 +46,18 @@ public class JetTradeMonitor {
         Properties kafkaProps = getKafkaProperties(brokerUri);
         Vertex readKafka = dag.newVertex("read-kafka", readKafka(kafkaProps, topic));
         Vertex extractTrade = dag.newVertex("extract-event", map(entryValue()));
-        int frameSize = 100;
+        WindowDefinition tumblingWinOf100 = new WindowDefinition(100, 0, 1);
         Vertex insertPunctuation = dag.newVertex("insert-punctuation",
-                () -> new InsertPunctuationP<>(Trade::getTime, cappingEventSeqLag(1),
+                insertPunctuation(Trade::getTime, cappingEventSeqLag(1),
                         1L, 500L));
         Vertex groupByF = dag.newVertex("group-by-frame",
-                groupByFrame(Trade::getTicker, Trade::getTime, frameSize, 0, counting())
-        );
-        Vertex slidingW = dag.newVertex("sliding-window", slidingWindow(frameSize, 1, counting()));
+                WindowingProcessors.groupByFrame(Trade::getTicker, Trade::getTime, tumblingWinOf100, counting()));
+        Vertex slidingW = dag.newVertex("sliding-window",
+                slidingWindow(tumblingWinOf100, WindowMaker.fromCollector(counting())));
+        Vertex filterPuncs = dag.newVertex("filterPuncs",
+                Processors.filter(event -> !(event instanceof Punctuation)));
         Vertex addTimestamp = dag.newVertex("timestamp",
-                Processors.map(f -> new TimestampedFrame((Frame)f, System.currentTimeMillis())));
+                Processors.map(f -> new TimestampedFrame((Frame) f, System.currentTimeMillis())));
         Vertex sink = dag.newVertex("sink", Processors.writeList("sink")).localParallelism(1);
 
         dag
@@ -57,7 +66,8 @@ public class JetTradeMonitor {
            .edge(between(insertPunctuation, groupByF).partitioned(Trade::getTicker, HASH_CODE))
            .edge(between(groupByF, slidingW).partitioned(Frame<Object, Object>::getKey)
                                                      .distributed())
-           .edge(between(slidingW, addTimestamp).oneToMany())
+           .edge(between(slidingW, filterPuncs).oneToMany())
+           .edge(between(filterPuncs, addTimestamp).oneToMany())
            .edge(between(addTimestamp, sink));
 
         JetInstance client = Jet.newJetClient();

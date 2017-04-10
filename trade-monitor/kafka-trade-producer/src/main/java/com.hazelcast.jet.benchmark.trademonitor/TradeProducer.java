@@ -31,6 +31,11 @@ public class TradeProducer {
     }
 
     public static void main(String[] args) throws Exception {
+        if (args.length != 3) {
+            System.err.println("Usage:");
+            System.err.println("  TradeProducer <bootstrap.servers> <topic> <trades per second>");
+            System.exit(1);
+        }
         String broker = args[0];
         String topic = args[1];
         long tradersPerSecond = Long.parseLong(args[2]);
