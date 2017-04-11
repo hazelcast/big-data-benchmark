@@ -1,5 +1,6 @@
 package com.hazelcast.jet.benchmark.trademonitor;
 
+import com.hazelcast.client.config.ClientConfig;
 import com.hazelcast.config.SerializerConfig;
 import com.hazelcast.jet.DAG;
 import com.hazelcast.jet.Jet;
@@ -20,6 +21,7 @@ import com.hazelcast.nio.serialization.StreamSerializer;
 import org.apache.kafka.common.serialization.LongDeserializer;
 
 import java.io.IOException;
+import java.util.LongSummaryStatistics;
 import java.util.Map;
 import java.util.Properties;
 import java.util.UUID;
@@ -47,19 +49,20 @@ public class JetTradeMonitor {
         String topic = args[1];
 
         JetConfig jetConfig = new JetConfig();
-        jetConfig.getHazelcastConfig().getSerializationConfig().addSerializerConfig(new SerializerConfig()
+        SerializerConfig serializerConfig = new SerializerConfig()
                 .setImplementation(new TimestampedFrameStreamSerializer())
-                .setTypeClass(TimestampedFrame.class));
+                .setTypeClass(TimestampedFrame.class);
+        jetConfig.getHazelcastConfig().getSerializationConfig().addSerializerConfig(serializerConfig);
         JetInstance jetInstance = Jet.newJetInstance(jetConfig);
 
         DAG dag = new DAG();
         Properties kafkaProps = getKafkaProperties(brokerUri);
         Vertex readKafka = dag.newVertex("read-kafka", readKafka(kafkaProps, topic));
         Vertex extractTrade = dag.newVertex("extract-event", map(entryValue()));
-        WindowDefinition tumblingWinOf100 = new WindowDefinition(100, 0, 1);
+        WindowDefinition tumblingWinOf100 = new WindowDefinition(100, 0, 10);
         Vertex insertPunctuation = dag.newVertex("insert-punctuation",
                 insertPunctuation(Trade::getTime, cappingEventSeqLag(1),
-                        1L, 500L));
+                        10L, 500L));
         Vertex groupByF = dag.newVertex("group-by-frame",
                 WindowingProcessors.groupByFrame(Trade::getTicker, Trade::getTime, tumblingWinOf100, counting()));
         Vertex slidingW = dag.newVertex("sliding-window",
@@ -80,7 +83,11 @@ public class JetTradeMonitor {
            .edge(between(filterPuncs, addTimestamp).oneToMany())
            .edge(between(addTimestamp, sink));
 
-        JetInstance client = Jet.newJetClient();
+        ClientConfig clientConfig = new ClientConfig();
+        clientConfig.getGroupConfig().setName("jet");
+        clientConfig.getGroupConfig().setPassword("jet-pass");
+        clientConfig.getSerializationConfig().addSerializerConfig(serializerConfig);
+        JetInstance client = Jet.newJetClient(clientConfig);
         IStreamList<TimestampedFrame<String, Long>> sinkList = client.getList("sink");
         client.newJob(dag).execute();
 
@@ -88,7 +95,8 @@ public class JetTradeMonitor {
 
         while (true) {
             long start = System.nanoTime();
-            System.out.println(sinkList.stream().mapToLong(e -> e.frame.getValue()).sum());
+            LongSummaryStatistics x = sinkList.subList(0, sinkList.size()).stream().mapToLong(e -> e.timestamp).summaryStatistics();
+            System.out.println("Diff: " + (x.getMax() - x.getMin()));
             System.out.println("counting took " + (System.nanoTime() - start) / 1_000_000L);
             Thread.sleep(1000);
         }
