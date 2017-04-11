@@ -1,6 +1,6 @@
 package com.hazelcast.jet.benchmark.trademonitor;
 
-import com.hazelcast.core.IMap;
+import com.hazelcast.config.SerializerConfig;
 import com.hazelcast.jet.DAG;
 import com.hazelcast.jet.Jet;
 import com.hazelcast.jet.JetInstance;
@@ -8,12 +8,18 @@ import com.hazelcast.jet.Processors;
 import com.hazelcast.jet.Punctuation;
 import com.hazelcast.jet.StreamingProcessorBase;
 import com.hazelcast.jet.Vertex;
+import com.hazelcast.jet.config.JetConfig;
+import com.hazelcast.jet.stream.IStreamList;
 import com.hazelcast.jet.windowing.Frame;
 import com.hazelcast.jet.windowing.WindowDefinition;
-import com.hazelcast.jet.windowing.WindowMaker;
+import com.hazelcast.jet.windowing.WindowToolkit;
 import com.hazelcast.jet.windowing.WindowingProcessors;
+import com.hazelcast.nio.ObjectDataInput;
+import com.hazelcast.nio.ObjectDataOutput;
+import com.hazelcast.nio.serialization.StreamSerializer;
 import org.apache.kafka.common.serialization.LongDeserializer;
 
+import java.io.IOException;
 import java.util.Map;
 import java.util.Properties;
 import java.util.UUID;
@@ -40,7 +46,11 @@ public class JetTradeMonitor {
         String brokerUri = args[0];
         String topic = args[1];
 
-        JetInstance jetInstance = Jet.newJetInstance();
+        JetConfig jetConfig = new JetConfig();
+        jetConfig.getHazelcastConfig().getSerializationConfig().addSerializerConfig(new SerializerConfig()
+                .setImplementation(new TimestampedFrameStreamSerializer())
+                .setTypeClass(TimestampedFrame.class));
+        JetInstance jetInstance = Jet.newJetInstance(jetConfig);
 
         DAG dag = new DAG();
         Properties kafkaProps = getKafkaProperties(brokerUri);
@@ -53,7 +63,7 @@ public class JetTradeMonitor {
         Vertex groupByF = dag.newVertex("group-by-frame",
                 WindowingProcessors.groupByFrame(Trade::getTicker, Trade::getTime, tumblingWinOf100, counting()));
         Vertex slidingW = dag.newVertex("sliding-window",
-                slidingWindow(tumblingWinOf100, WindowMaker.fromCollector(counting())));
+                slidingWindow(tumblingWinOf100, WindowToolkit.fromCollector(counting())));
         Vertex filterPuncs = dag.newVertex("filterPuncs",
                 Processors.filter(event -> !(event instanceof Punctuation)));
         Vertex addTimestamp = dag.newVertex("timestamp",
@@ -71,12 +81,15 @@ public class JetTradeMonitor {
            .edge(between(addTimestamp, sink));
 
         JetInstance client = Jet.newJetClient();
-
-        IMap<String, Long> sinkMap = client.getMap("sink");
+        IStreamList<TimestampedFrame<String, Long>> sinkList = client.getList("sink");
         client.newJob(dag).execute();
 
+        Thread.sleep(5000);
+
         while (true) {
-            System.out.println(sinkMap.entrySet().stream().mapToLong(e -> e.getValue()).sum());
+            long start = System.nanoTime();
+            System.out.println(sinkList.stream().mapToLong(e -> e.frame.getValue()).sum());
+            System.out.println("counting took " + (System.nanoTime() - start) / 1_000_000L);
             Thread.sleep(1000);
         }
     }
@@ -131,6 +144,35 @@ public class JetTradeMonitor {
         @Override
         public String toString() {
             return frame.getSeq() + "," + frame.getKey() + "," + frame.getValue() + "," + timestamp;
+        }
+    }
+
+    public static class TimestampedFrameStreamSerializer implements StreamSerializer<TimestampedFrame> {
+
+        @Override
+        public void write(ObjectDataOutput objectDataOutput, TimestampedFrame timestampedFrame) throws IOException {
+            objectDataOutput.writeLong(timestampedFrame.frame.getSeq());
+            objectDataOutput.writeObject(timestampedFrame.frame.getKey());
+            objectDataOutput.writeObject(timestampedFrame.frame.getValue());
+            objectDataOutput.writeLong(timestampedFrame.timestamp);
+        }
+
+        @Override
+        public TimestampedFrame read(ObjectDataInput objectDataInput) throws IOException {
+            return new TimestampedFrame(
+                    new Frame(objectDataInput.readLong(), objectDataInput.readObject(), objectDataInput.readObject()),
+                    objectDataInput.readLong()
+            );
+        }
+
+        @Override
+        public int getTypeId() {
+            return 1;
+        }
+
+        @Override
+        public void destroy() {
+
         }
     }
 }
