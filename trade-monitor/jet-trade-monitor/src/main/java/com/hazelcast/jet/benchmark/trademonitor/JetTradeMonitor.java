@@ -151,18 +151,13 @@ public class JetTradeMonitor {
 
         @Override
         public void write(ObjectDataOutput objectDataOutput, TimestampedFrame timestampedFrame) throws IOException {
-            objectDataOutput.writeLong(timestampedFrame.frame.getSeq());
-            objectDataOutput.writeObject(timestampedFrame.frame.getKey());
-            objectDataOutput.writeObject(timestampedFrame.frame.getValue());
+            objectDataOutput.writeObject(timestampedFrame.frame);
             objectDataOutput.writeLong(timestampedFrame.timestamp);
         }
 
         @Override
         public TimestampedFrame read(ObjectDataInput objectDataInput) throws IOException {
-            return new TimestampedFrame(
-                    new Frame(objectDataInput.readLong(), objectDataInput.readObject(), objectDataInput.readObject()),
-                    objectDataInput.readLong()
-            );
+            return new TimestampedFrame(objectDataInput.readObject(), objectDataInput.readLong());
         }
 
         @Override
