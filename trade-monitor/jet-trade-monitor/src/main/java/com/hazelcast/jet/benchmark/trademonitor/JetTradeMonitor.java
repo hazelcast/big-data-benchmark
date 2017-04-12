@@ -21,7 +21,7 @@ import com.hazelcast.nio.serialization.StreamSerializer;
 import org.apache.kafka.common.serialization.LongDeserializer;
 
 import java.io.IOException;
-import java.util.LongSummaryStatistics;
+import java.nio.charset.Charset;
 import java.util.Map;
 import java.util.Properties;
 import java.util.UUID;
@@ -71,7 +71,8 @@ public class JetTradeMonitor {
                 Processors.filter(event -> !(event instanceof Punctuation)));
         Vertex addTimestamp = dag.newVertex("timestamp",
                 Processors.map(f -> new TimestampedFrame((Frame) f, System.currentTimeMillis())));
-        Vertex sink = dag.newVertex("sink", Processors.writeList("sink")).localParallelism(1);
+        Vertex sink = dag.newVertex("sink", Processors.writeFile("jet-output/output", Charset.defaultCharset(),
+                false, true));
 
         dag
            .edge(between(readKafka, extractTrade).oneToMany())
@@ -91,14 +92,9 @@ public class JetTradeMonitor {
         IStreamList<TimestampedFrame<String, Long>> sinkList = client.getList("sink");
         client.newJob(dag).execute();
 
-        Thread.sleep(5000);
-
         while (true) {
-            long start = System.nanoTime();
-            LongSummaryStatistics x = sinkList.subList(0, sinkList.size()).stream().mapToLong(e -> e.timestamp).summaryStatistics();
-            System.out.println("Diff: " + (x.getMax() - x.getMin()));
-            System.out.println("counting took " + (System.nanoTime() - start) / 1_000_000L);
-            Thread.sleep(1000);
+            Thread.sleep(5000);
+            System.out.println(OutputParser.minMaxDiff("jet-output"));
         }
     }
 

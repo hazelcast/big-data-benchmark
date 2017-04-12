@@ -17,18 +17,17 @@
 package com.hazelcast.jet.benchmark.trademonitor;
 
 import org.apache.flink.api.common.JobExecutionResult;
+import org.apache.flink.api.common.functions.FoldFunction;
 import org.apache.flink.api.common.functions.ReduceFunction;
 import org.apache.flink.api.common.typeinfo.TypeHint;
 import org.apache.flink.api.java.tuple.Tuple;
 import org.apache.flink.api.java.tuple.Tuple2;
-import org.apache.flink.api.java.tuple.Tuple3;
 import org.apache.flink.api.java.tuple.Tuple4;
+import org.apache.flink.core.fs.FileSystem.WriteMode;
 import org.apache.flink.streaming.api.TimeCharacteristic;
 import org.apache.flink.streaming.api.datastream.DataStreamSource;
 import org.apache.flink.streaming.api.environment.StreamExecutionEnvironment;
 import org.apache.flink.streaming.api.functions.AssignerWithPeriodicWatermarks;
-import org.apache.flink.streaming.api.functions.aggregation.AggregationFunction;
-import org.apache.flink.streaming.api.functions.aggregation.SumAggregator;
 import org.apache.flink.streaming.api.functions.timestamps.BoundedOutOfOrdernessTimestampExtractor;
 import org.apache.flink.streaming.api.functions.windowing.WindowFunction;
 import org.apache.flink.streaming.api.windowing.assigners.SlidingEventTimeWindows;
@@ -38,12 +37,9 @@ import org.apache.flink.streaming.connectors.kafka.FlinkKafkaConsumer010;
 import org.apache.flink.streaming.util.serialization.AbstractDeserializationSchema;
 import org.apache.flink.streaming.util.serialization.DeserializationSchema;
 import org.apache.flink.util.Collector;
-import org.apache.flink.util.FileUtils;
 import org.apache.kafka.common.serialization.LongDeserializer;
 
-import java.io.File;
 import java.io.IOException;
-import java.nio.file.Files;
 import java.util.Properties;
 import java.util.UUID;
 
@@ -51,8 +47,6 @@ import java.util.UUID;
 public class FlinkTradeMonitor {
 
     public static void main(String[] args) throws Exception {
-        FileUtils.deleteDirectory(new File("flink-output"));
-
         // set up the execution environment
         StreamExecutionEnvironment env =
                 StreamExecutionEnvironment.getExecutionEnvironment();
@@ -66,6 +60,7 @@ public class FlinkTradeMonitor {
                 return deserializer.deserialize(null, message);
             }
         };
+
         DataStreamSource<Trade> trades = env.addSource(new FlinkKafkaConsumer010<>("trades",
                 schema, getKafkaProperties("localhost:9092")));
         AssignerWithPeriodicWatermarks<Trade> timestampExtractor
@@ -78,29 +73,33 @@ public class FlinkTradeMonitor {
 
         trades
                 .assignTimestampsAndWatermarks(timestampExtractor)
-                .map(t -> new Tuple2<>(t.getTicker(), 1L))
-                .returns(new TypeHint<Tuple2<String, Long>>() {
-                })
-                .keyBy(0)
-                .window(SlidingEventTimeWindows.of(Time.milliseconds(1000), Time.milliseconds(1)))
-                .reduce(new ReduceFunction<Tuple2<String, Long>>() {
-                    @Override
-                    public Tuple2<String, Long> reduce(Tuple2<String, Long> left, Tuple2<String, Long> right) throws
-                            Exception {
-                        return new Tuple2<>(left.f0, left.f1 + right.f1);
+                .keyBy((Trade t) -> t.getTicker())
+                .window(SlidingEventTimeWindows.of(Time.milliseconds(1000), Time.milliseconds(10)))
+                .fold(0L, new FoldFunction<Trade, Long>() {
+                    @Override public Long fold(Long accumulator, Trade value) throws Exception {
+                        return accumulator + 1;
                     }
-                }, new WindowFunction<Tuple2<String,Long>, Tuple4<Long,String,Long, Long>, Tuple, TimeWindow>() {
+                }, new WindowFunction<Long, Tuple4<Long, String, Long, Long>, String, TimeWindow>() {
                     @Override
-                    public void apply(Tuple tuple, TimeWindow window,
-                                      Iterable<Tuple2<String, Long>> input,
-                                      Collector<Tuple4<Long,String,Long, Long>> out) throws Exception {
-                        Tuple2<String, Long> val = input.iterator().next();
-                        Tuple4<Long, String, Long, Long> t = new Tuple4<>(window.getEnd(), val.f0, val.f1, System
-                                .currentTimeMillis());
-                        out.collect(t);
+                    public void apply(String key, TimeWindow window,
+                                      Iterable<Long> input,
+                                      Collector<Tuple4<Long, String, Long, Long>> out) throws Exception {
+                        Long count = input.iterator().next();
+                        out.collect(new Tuple4<>(window.getEnd(), key, count, System.currentTimeMillis()));
                     }
                 })
-                .writeAsCsv("flink-output");
+                .writeAsCsv("flink-output", WriteMode.OVERWRITE);
+
+        new Thread(() -> {
+            try {
+                while (true) {
+                    Thread.sleep(5000);
+                    System.out.println(OutputParser.minMaxDiff("flink-output"));
+                }
+            } catch (Exception e) {
+                e.printStackTrace();
+            }
+        }).start();
 
         JobExecutionResult execute = env.execute("Trade Monitor Example");
 
