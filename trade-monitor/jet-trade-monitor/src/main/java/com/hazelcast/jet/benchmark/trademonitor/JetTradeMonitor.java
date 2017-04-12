@@ -32,7 +32,7 @@ import static com.hazelcast.jet.Partitioner.HASH_CODE;
 import static com.hazelcast.jet.Processors.map;
 import static com.hazelcast.jet.connector.kafka.ReadKafkaP.readKafka;
 import static com.hazelcast.jet.stream.DistributedCollectors.counting;
-import static com.hazelcast.jet.windowing.PunctuationKeepers.cappingEventSeqLag;
+import static com.hazelcast.jet.windowing.PunctuationKeepers.cappingEventSeqLagAndLull;
 import static com.hazelcast.jet.windowing.WindowDefinition.slidingWindow;
 import static com.hazelcast.jet.windowing.WindowingProcessors.insertPunctuation;
 import static com.hazelcast.jet.windowing.WindowingProcessors.slidingWindow;
