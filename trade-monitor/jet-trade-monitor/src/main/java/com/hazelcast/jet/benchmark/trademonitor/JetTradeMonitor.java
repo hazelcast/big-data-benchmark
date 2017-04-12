@@ -33,6 +33,7 @@ import static com.hazelcast.jet.Processors.map;
 import static com.hazelcast.jet.connector.kafka.ReadKafkaP.readKafka;
 import static com.hazelcast.jet.stream.DistributedCollectors.counting;
 import static com.hazelcast.jet.windowing.PunctuationKeepers.cappingEventSeqLag;
+import static com.hazelcast.jet.windowing.WindowDefinition.slidingWindow;
 import static com.hazelcast.jet.windowing.WindowingProcessors.insertPunctuation;
 import static com.hazelcast.jet.windowing.WindowingProcessors.slidingWindow;
 
@@ -59,14 +60,13 @@ public class JetTradeMonitor {
         Properties kafkaProps = getKafkaProperties(brokerUri);
         Vertex readKafka = dag.newVertex("read-kafka", readKafka(kafkaProps, topic));
         Vertex extractTrade = dag.newVertex("extract-event", map(entryValue()));
-        WindowDefinition tumblingWinOf100 = new WindowDefinition(100, 0, 10);
+        WindowDefinition slidingWindow = slidingWindow(1000, 10);
         Vertex insertPunctuation = dag.newVertex("insert-punctuation",
-                insertPunctuation(Trade::getTime, cappingEventSeqLag(1),
-                        10L, 500L));
+                insertPunctuation(Trade::getTime, () -> cappingEventSeqLag(1).throttle(10)));
         Vertex groupByF = dag.newVertex("group-by-frame",
-                WindowingProcessors.groupByFrame(Trade::getTicker, Trade::getTime, tumblingWinOf100, counting()));
+                WindowingProcessors.groupByFrame(Trade::getTicker, Trade::getTime, slidingWindow, counting()));
         Vertex slidingW = dag.newVertex("sliding-window",
-                slidingWindow(tumblingWinOf100, WindowToolkit.fromCollector(counting())));
+                slidingWindow(slidingWindow, WindowToolkit.fromCollector(counting())));
         Vertex filterPuncs = dag.newVertex("filterPuncs",
                 Processors.filter(event -> !(event instanceof Punctuation)));
         Vertex addTimestamp = dag.newVertex("timestamp",
