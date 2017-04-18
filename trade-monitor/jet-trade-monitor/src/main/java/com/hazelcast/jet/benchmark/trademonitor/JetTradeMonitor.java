@@ -13,7 +13,7 @@ import com.hazelcast.jet.config.JetConfig;
 import com.hazelcast.jet.stream.IStreamList;
 import com.hazelcast.jet.windowing.Frame;
 import com.hazelcast.jet.windowing.WindowDefinition;
-import com.hazelcast.jet.windowing.WindowToolkit;
+import com.hazelcast.jet.windowing.WindowOperation;
 import com.hazelcast.jet.windowing.WindowingProcessors;
 import com.hazelcast.nio.ObjectDataInput;
 import com.hazelcast.nio.ObjectDataOutput;
@@ -32,8 +32,7 @@ import static com.hazelcast.jet.Partitioner.HASH_CODE;
 import static com.hazelcast.jet.Processors.map;
 import static com.hazelcast.jet.connector.kafka.ReadKafkaP.readKafka;
 import static com.hazelcast.jet.stream.DistributedCollectors.counting;
-import static com.hazelcast.jet.windowing.PunctuationKeepers.cappingEventSeqLagAndLull;
-import static com.hazelcast.jet.windowing.WindowDefinition.slidingWindow;
+import static com.hazelcast.jet.windowing.PunctuationPolicies.cappingEventSeqLag;
 import static com.hazelcast.jet.windowing.WindowingProcessors.insertPunctuation;
 import static com.hazelcast.jet.windowing.WindowingProcessors.slidingWindow;
 
@@ -60,13 +59,13 @@ public class JetTradeMonitor {
         Properties kafkaProps = getKafkaProperties(brokerUri);
         Vertex readKafka = dag.newVertex("read-kafka", readKafka(kafkaProps, topic));
         Vertex extractTrade = dag.newVertex("extract-event", map(entryValue()));
-        WindowDefinition slidingWindow = slidingWindow(1000, 10);
+        WindowDefinition slidingWindow = WindowDefinition.slidingWindowDef(1000, 10);
         Vertex insertPunctuation = dag.newVertex("insert-punctuation",
-                insertPunctuation(Trade::getTime, () -> cappingEventSeqLag(1).throttle(10)));
+                insertPunctuation(Trade::getTime, () -> cappingEventSeqLag(1).throttleByMinStep(10)));
         Vertex groupByF = dag.newVertex("group-by-frame",
                 WindowingProcessors.groupByFrame(Trade::getTicker, Trade::getTime, slidingWindow, counting()));
         Vertex slidingW = dag.newVertex("sliding-window",
-                slidingWindow(slidingWindow, WindowToolkit.fromCollector(counting())));
+                slidingWindow(slidingWindow, WindowOperation.fromCollector(counting())));
         Vertex filterPuncs = dag.newVertex("filterPuncs",
                 Processors.filter(event -> !(event instanceof Punctuation)));
         Vertex addTimestamp = dag.newVertex("timestamp",
