@@ -35,7 +35,7 @@ import java.util.UUID;
 
 public class SparkTradeMonitor {
 
-    public static void main(String[] args) {
+    public static void main(String[] args) throws InterruptedException {
         if (args.length != 3) {
             System.err.println("Usage:");
             System.err.println("  SparkTradeMonitor <bootstrap.servers> <topic> <checkpoint directory>");
@@ -52,39 +52,23 @@ public class SparkTradeMonitor {
         SparkConf conf = new SparkConf()
                 .setAppName("Trade Monitor")
                 .setMaster("local[2]");
-        JavaStreamingContext jsc = new JavaStreamingContext(conf, Durations.seconds(1));
+        JavaStreamingContext jsc = new JavaStreamingContext(conf, Durations.seconds(10));
         jsc.checkpoint(checkpointDirectory);
 
         final JavaInputDStream<ConsumerRecord<String, Trade>> stream =
-                KafkaUtils.createDirectStream(jsc, LocationStrategies.PreferConsistent(),
+                KafkaUtils.createDirectStream(jsc,
+                        LocationStrategies.PreferConsistent(),
                         ConsumerStrategies.<String, Trade>Subscribe(Collections.singleton(topic), getKafkaProperties(brokerUri)));
-
-        JavaPairDStream<String, Long> paired = stream.mapToPair(record -> new Tuple2<>(record.key(), 1L));
+        JavaPairDStream<String, Long> paired = stream.mapToPair(record -> new Tuple2<>(record.value().getTicker(), 1L));
         JavaPairDStream<String, Long> reduced = paired.reduceByKeyAndWindow(
                         (Long a, Long b) -> a + b,
                         (Long a, Long b) -> a - b,
-                        Durations.seconds(10),
-                        Durations.seconds(1));
-        reduced.foreachRDD(rdd -> {
-                    rdd.saveAsTextFile("c:/tmp/tradesOutput");
-                });
+                        Durations.seconds(30),
+                        Durations.seconds(10));
+        reduced.foreachRDD(rdd -> rdd.saveAsTextFile("c:/tmp/tradesOutput"));
 
         jsc.start();
-
-//        final JavaInputDStream<ConsumerRecord<String, String>> stream =
-//                KafkaUtils.createDirectStream(jsc,
-//                        LocationStrategies.PreferConsistent(),
-//                        ConsumerStrategies.<String, String>Subscribe(topics, kafkaParams)
-//                );
-//
-//        JavaRDD<String> textFile = sc.textFile(args[0]);
-//        JavaPairRDD<String, Long> pairs =
-//                words.mapToPair((PairFunction<String, String, Long>) s -> new Tuple2<>(s, 1L));
-//
-//        System.out.println("Starting task..");
-//        long t = System.currentTimeMillis();
-//        counts.saveAsTextFile(args[1] + "_" + t);
-//        System.out.println("Time=" + (System.currentTimeMillis() - t));
+        jsc.awaitTermination();
     }
 
     private static Map<String, Object> getKafkaProperties(String brokerUrl) {

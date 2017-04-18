@@ -31,15 +31,15 @@ public class TradeProducer {
     }
 
     public static void main(String[] args) throws Exception {
-        if (args.length != 3) {
+        if (args.length != 4) {
             System.err.println("Usage:");
-            System.err.println("  TradeProducer <bootstrap.servers> <topic> <trades per second>");
+            System.err.println("  TradeProducer <bootstrap.servers> <topic> <trades per second> <num seconds>");
             System.exit(1);
         }
         String broker = args[0];
         String topic = args[1];
         long tradersPerSecond = Long.parseLong(args[2]);
-        int numSeconds = 1000;
+        int numSeconds = Integer.parseInt(args[3]);
 
         TradeProducer tradeProducer = new TradeProducer(broker);
 

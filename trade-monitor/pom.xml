@@ -14,5 +14,6 @@
         <module>kafka-trade-producer</module>
         <module>jet-trade-monitor</module>
         <module>flink-trade-monitor</module>
+        <module>spark-trade-monitor</module>
     </modules>
 </project>
