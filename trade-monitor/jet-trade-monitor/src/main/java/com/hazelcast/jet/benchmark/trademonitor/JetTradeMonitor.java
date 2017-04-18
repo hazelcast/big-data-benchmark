@@ -10,7 +10,6 @@ import com.hazelcast.jet.Punctuation;
 import com.hazelcast.jet.StreamingProcessorBase;
 import com.hazelcast.jet.Vertex;
 import com.hazelcast.jet.config.JetConfig;
-import com.hazelcast.jet.stream.IStreamList;
 import com.hazelcast.jet.windowing.Frame;
 import com.hazelcast.jet.windowing.WindowDefinition;
 import com.hazelcast.jet.windowing.WindowOperations;
@@ -32,7 +31,7 @@ import static com.hazelcast.jet.Partitioner.HASH_CODE;
 import static com.hazelcast.jet.Processors.map;
 import static com.hazelcast.jet.connector.kafka.ReadKafkaP.readKafka;
 import static com.hazelcast.jet.stream.DistributedCollectors.counting;
-import static com.hazelcast.jet.windowing.PunctuationPolicies.cappingEventSeqLag;
+import static com.hazelcast.jet.windowing.PunctuationPolicies.cappingEventSeqLagAndRetention;
 import static com.hazelcast.jet.windowing.WindowingProcessors.insertPunctuation;
 import static com.hazelcast.jet.windowing.WindowingProcessors.slidingWindow;
 
@@ -61,7 +60,8 @@ public class JetTradeMonitor {
         Vertex extractTrade = dag.newVertex("extract-event", map(entryValue()));
         WindowDefinition slidingWindow = WindowDefinition.slidingWindowDef(1000, 10);
         Vertex insertPunctuation = dag.newVertex("insert-punctuation",
-                insertPunctuation(Trade::getTime, () -> cappingEventSeqLag(1).throttleByFrame(slidingWindow)));
+                insertPunctuation(Trade::getTime, () -> cappingEventSeqLagAndRetention(1, 100)
+                        .throttleByFrame(slidingWindow)));
         Vertex groupByF = dag.newVertex("group-by-frame",
                 WindowingProcessors.groupByFrame(Trade::getTicker, Trade::getTime, slidingWindow, counting()));
         Vertex slidingW = dag.newVertex("sliding-window",
@@ -74,25 +74,24 @@ public class JetTradeMonitor {
                 false, true));
 
         dag
-           .edge(between(readKafka, extractTrade).oneToMany())
-           .edge(between(extractTrade, insertPunctuation).oneToMany())
-           .edge(between(insertPunctuation, groupByF).partitioned(Trade::getTicker, HASH_CODE))
-           .edge(between(groupByF, slidingW).partitioned(Frame<Object, Object>::getKey)
-                                                     .distributed())
-           .edge(between(slidingW, filterPuncs).oneToMany())
-           .edge(between(filterPuncs, addTimestamp).oneToMany())
-           .edge(between(addTimestamp, sink));
+                .edge(between(readKafka, extractTrade).oneToMany())
+                .edge(between(extractTrade, insertPunctuation).oneToMany())
+                .edge(between(insertPunctuation, groupByF).partitioned(Trade::getTicker, HASH_CODE))
+                .edge(between(groupByF, slidingW).partitioned(Frame<Object, Object>::getKey)
+                                                 .distributed())
+                .edge(between(slidingW, filterPuncs).oneToMany())
+                .edge(between(filterPuncs, addTimestamp).oneToMany())
+                .edge(between(addTimestamp, sink));
 
         ClientConfig clientConfig = new ClientConfig();
         clientConfig.getGroupConfig().setName("jet");
         clientConfig.getGroupConfig().setPassword("jet-pass");
         clientConfig.getSerializationConfig().addSerializerConfig(serializerConfig);
         JetInstance client = Jet.newJetClient(clientConfig);
-        IStreamList<TimestampedFrame<String, Long>> sinkList = client.getList("sink");
         client.newJob(dag).execute();
 
         while (true) {
-            Thread.sleep(5000);
+            Thread.sleep(30000);
             System.out.println(OutputParser.minMaxDiff("jet-output"));
         }
     }

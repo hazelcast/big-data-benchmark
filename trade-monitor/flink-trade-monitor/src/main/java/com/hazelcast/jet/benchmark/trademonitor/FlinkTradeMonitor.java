@@ -64,7 +64,7 @@ public class FlinkTradeMonitor {
         DataStreamSource<Trade> trades = env.addSource(new FlinkKafkaConsumer010<>("trades",
                 schema, getKafkaProperties("localhost:9092")));
         AssignerWithPeriodicWatermarks<Trade> timestampExtractor
-                = new BoundedOutOfOrdernessTimestampExtractor<Trade>(Time.milliseconds(10)) {
+                = new BoundedOutOfOrdernessTimestampExtractor<Trade>(Time.milliseconds(1)) {
             @Override
             public long extractTimestamp(Trade element) {
                 return element.getTime();

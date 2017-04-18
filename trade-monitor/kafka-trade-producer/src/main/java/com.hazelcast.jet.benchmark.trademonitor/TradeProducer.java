@@ -33,17 +33,17 @@ public class TradeProducer {
     public static void main(String[] args) throws Exception {
         if (args.length != 4) {
             System.err.println("Usage:");
-            System.err.println("  TradeProducer <bootstrap.servers> <topic> <trades per second> <num seconds>");
+            System.err.println("  TradeProducer <bootstrap.servers> <topic> <trades per second> <number of seconds>");
             System.exit(1);
         }
         String broker = args[0];
         String topic = args[1];
         long tradersPerSecond = Long.parseLong(args[2]);
-        int numSeconds = Integer.parseInt(args[3]);
+        long numSeconds = Long.parseLong(args[3]);
 
         TradeProducer tradeProducer = new TradeProducer(broker);
 
-        for (int i = 0; i < numSeconds; i++) {
+        for (long i = 0; i < numSeconds; i++) {
             tradeProducer.produce(topic, i, tradersPerSecond);
         }
         tradeProducer.close();
@@ -59,7 +59,7 @@ public class TradeProducer {
             Trade trade = nextTrade(time);
             producer.send(new ProducerRecord<>(topic, trade));
         }
-        System.out.println("Produced " + count + " trades to topic " + topic);
+        System.out.println("Produced " + count + " trades at seq " + time + " to topic " + topic );
     }
 
     private void loadTickers() throws URISyntaxException, IOException {
