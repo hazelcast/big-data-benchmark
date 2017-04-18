@@ -12,7 +12,6 @@ import com.hazelcast.jet.Vertex;
 import com.hazelcast.jet.config.JetConfig;
 import com.hazelcast.jet.windowing.Frame;
 import com.hazelcast.jet.windowing.WindowDefinition;
-import com.hazelcast.jet.windowing.WindowOperations;
 import com.hazelcast.jet.windowing.WindowingProcessors;
 import com.hazelcast.nio.ObjectDataInput;
 import com.hazelcast.nio.ObjectDataOutput;
@@ -30,8 +29,8 @@ import static com.hazelcast.jet.Edge.between;
 import static com.hazelcast.jet.Partitioner.HASH_CODE;
 import static com.hazelcast.jet.Processors.map;
 import static com.hazelcast.jet.connector.kafka.ReadKafkaP.readKafka;
-import static com.hazelcast.jet.stream.DistributedCollectors.counting;
 import static com.hazelcast.jet.windowing.PunctuationPolicies.cappingEventSeqLagAndRetention;
+import static com.hazelcast.jet.windowing.WindowOperations.counting;
 import static com.hazelcast.jet.windowing.WindowingProcessors.insertPunctuation;
 import static com.hazelcast.jet.windowing.WindowingProcessors.slidingWindow;
 
@@ -40,7 +39,7 @@ public class JetTradeMonitor {
     public static void main(String[] args) throws Exception {
         if (args.length != 2) {
             System.err.println("Usage:");
-            System.err.println("  TradeProducer <bootstrap.servers> <topic>");
+            System.err.println("  JetTradeMonitor <bootstrap.servers> <topic>");
             System.exit(1);
         }
         System.setProperty("hazelcast.logging.type", "log4j");
@@ -65,9 +64,7 @@ public class JetTradeMonitor {
         Vertex groupByF = dag.newVertex("group-by-frame",
                 WindowingProcessors.groupByFrame(Trade::getTicker, Trade::getTime, slidingWindow, counting()));
         Vertex slidingW = dag.newVertex("sliding-window",
-                slidingWindow(slidingWindow, WindowOperations.counting()));
-        Vertex filterPuncs = dag.newVertex("filterPuncs",
-                Processors.filter(event -> !(event instanceof Punctuation)));
+                slidingWindow(slidingWindow, counting(), false));
         Vertex addTimestamp = dag.newVertex("timestamp",
                 Processors.map(f -> new TimestampedFrame((Frame) f, System.currentTimeMillis())));
         Vertex sink = dag.newVertex("sink", Processors.writeFile("jet-output/output", Charset.defaultCharset(),
@@ -79,8 +76,7 @@ public class JetTradeMonitor {
                 .edge(between(insertPunctuation, groupByF).partitioned(Trade::getTicker, HASH_CODE))
                 .edge(between(groupByF, slidingW).partitioned(Frame<Object, Object>::getKey)
                                                  .distributed())
-                .edge(between(slidingW, filterPuncs).oneToMany())
-                .edge(between(filterPuncs, addTimestamp).oneToMany())
+                .edge(between(slidingW, addTimestamp).oneToMany())
                 .edge(between(addTimestamp, sink));
 
         ClientConfig clientConfig = new ClientConfig();
