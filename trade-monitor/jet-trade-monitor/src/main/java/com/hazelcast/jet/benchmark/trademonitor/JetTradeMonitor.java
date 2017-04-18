@@ -13,7 +13,7 @@ import com.hazelcast.jet.config.JetConfig;
 import com.hazelcast.jet.stream.IStreamList;
 import com.hazelcast.jet.windowing.Frame;
 import com.hazelcast.jet.windowing.WindowDefinition;
-import com.hazelcast.jet.windowing.WindowOperation;
+import com.hazelcast.jet.windowing.WindowOperations;
 import com.hazelcast.jet.windowing.WindowingProcessors;
 import com.hazelcast.nio.ObjectDataInput;
 import com.hazelcast.nio.ObjectDataOutput;
@@ -61,11 +61,11 @@ public class JetTradeMonitor {
         Vertex extractTrade = dag.newVertex("extract-event", map(entryValue()));
         WindowDefinition slidingWindow = WindowDefinition.slidingWindowDef(1000, 10);
         Vertex insertPunctuation = dag.newVertex("insert-punctuation",
-                insertPunctuation(Trade::getTime, () -> cappingEventSeqLag(1).throttleByMinStep(10)));
+                insertPunctuation(Trade::getTime, () -> cappingEventSeqLag(1).throttleByFrame(slidingWindow)));
         Vertex groupByF = dag.newVertex("group-by-frame",
                 WindowingProcessors.groupByFrame(Trade::getTicker, Trade::getTime, slidingWindow, counting()));
         Vertex slidingW = dag.newVertex("sliding-window",
-                slidingWindow(slidingWindow, WindowOperation.fromCollector(counting())));
+                slidingWindow(slidingWindow, WindowOperations.counting()));
         Vertex filterPuncs = dag.newVertex("filterPuncs",
                 Processors.filter(event -> !(event instanceof Punctuation)));
         Vertex addTimestamp = dag.newVertex("timestamp",
