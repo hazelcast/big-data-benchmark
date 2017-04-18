@@ -46,13 +46,10 @@ public class SparkTradeMonitor {
         final String topic = args[1];
         final String checkpointDirectory = args[2];
 
-//        JetInstance instance = Jet.newJetInstance();
-//        IStreamList<Frame<String, Long>> sinkList = instance.getList("sink");
-
         SparkConf conf = new SparkConf()
                 .setAppName("Trade Monitor")
                 .setMaster("local[2]");
-        JavaStreamingContext jsc = new JavaStreamingContext(conf, Durations.seconds(10));
+        JavaStreamingContext jsc = new JavaStreamingContext(conf, Durations.seconds(1));
         jsc.checkpoint(checkpointDirectory);
 
         final JavaInputDStream<ConsumerRecord<String, Trade>> stream =
@@ -63,9 +60,9 @@ public class SparkTradeMonitor {
         JavaPairDStream<String, Long> reduced = paired.reduceByKeyAndWindow(
                         (Long a, Long b) -> a + b,
                         (Long a, Long b) -> a - b,
-                        Durations.seconds(30),
-                        Durations.seconds(10));
-        reduced.foreachRDD(rdd -> rdd.saveAsTextFile("c:/tmp/tradesOutput"));
+                        Durations.seconds(10),
+                        Durations.seconds(1));
+        reduced.foreachRDD((rdd, time) -> rdd.saveAsTextFile("c:/tmp/tradesOutput" + time));
 
         jsc.start();
         jsc.awaitTermination();
@@ -75,10 +72,9 @@ public class SparkTradeMonitor {
         Map<String, Object> props = new HashMap<>();
         props.put("bootstrap.servers", brokerUrl);
         props.put("group.id", UUID.randomUUID().toString());
-        props.put("key.deserializer", LongDeserializer.class.getName());
-        props.put("value.deserializer", TradeDeserializer.class.getName());
+        props.put("key.deserializer", LongDeserializer.class);
+        props.put("value.deserializer", TradeDeserializer.class);
         props.put("auto.offset.reset", "earliest");
-//        props.put("max.poll.records", "32768");
         return props;
     }
 }
