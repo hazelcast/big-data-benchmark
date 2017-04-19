@@ -68,7 +68,7 @@ public class JetTradeMonitor {
         Vertex addTimestamp = dag.newVertex("timestamp",
                 Processors.map(f -> new TimestampedFrame((Frame) f, System.currentTimeMillis())));
         Vertex sink = dag.newVertex("sink", Processors.writeFile("jet-output/output", Charset.defaultCharset(),
-                false, true));
+                false));
 
         dag
                 .edge(between(readKafka, extractTrade).oneToMany())
