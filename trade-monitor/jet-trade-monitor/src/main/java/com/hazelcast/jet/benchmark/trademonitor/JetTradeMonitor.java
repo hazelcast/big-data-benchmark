@@ -28,7 +28,7 @@ import static com.hazelcast.jet.DistributedFunctions.entryValue;
 import static com.hazelcast.jet.Edge.between;
 import static com.hazelcast.jet.Partitioner.HASH_CODE;
 import static com.hazelcast.jet.Processors.map;
-import static com.hazelcast.jet.connector.kafka.ReadKafkaP.readKafka;
+import static com.hazelcast.jet.connector.kafka.StreamKafkaP.streamKafka;
 import static com.hazelcast.jet.windowing.PunctuationPolicies.cappingEventSeqLagAndRetention;
 import static com.hazelcast.jet.windowing.WindowOperations.counting;
 import static com.hazelcast.jet.windowing.WindowingProcessors.insertPunctuation;
@@ -55,7 +55,7 @@ public class JetTradeMonitor {
 
         DAG dag = new DAG();
         Properties kafkaProps = getKafkaProperties(brokerUri);
-        Vertex readKafka = dag.newVertex("read-kafka", readKafka(kafkaProps, topic));
+        Vertex readKafka = dag.newVertex("read-kafka", streamKafka(kafkaProps, topic));
         Vertex extractTrade = dag.newVertex("extract-event", map(entryValue()));
         WindowDefinition slidingWindow = WindowDefinition.slidingWindowDef(1000, 10);
         Vertex insertPunctuation = dag.newVertex("insert-punctuation",
