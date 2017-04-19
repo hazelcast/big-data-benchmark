@@ -31,8 +31,10 @@ import java.util.concurrent.atomic.AtomicLong;
 
 import static com.hazelcast.jet.Distributed.Comparator.comparing;
 import static com.hazelcast.jet.Edge.between;
+import static com.hazelcast.jet.Edge.from;
 import static com.hazelcast.jet.Partitioner.HASH_CODE;
 import static com.hazelcast.jet.Processors.map;
+import static com.hazelcast.jet.Processors.writeFile;
 import static com.hazelcast.jet.connector.kafka.StreamKafkaP.streamKafka;
 import static com.hazelcast.jet.stream.DistributedCollectors.maxBy;
 import static com.hazelcast.jet.windowing.PunctuationPolicies.cappingEventSeqLagAndLull;
@@ -46,15 +48,16 @@ public class JetLatencyMonitor {
     private static final AtomicLong totalCount = new AtomicLong();
 
     public static void main(String[] args) throws Exception {
-        if (args.length != 3) {
+        if (args.length < 3 || args.length > 4) {
             System.err.println("Usage:");
-            System.err.println("  JetTradeMonitor <bootstrap.servers> <topic> <initialOffset:earliest/latest>");
+            System.err.println("  "+JetLatencyMonitor.class.getSimpleName()+" <bootstrap.servers> <topic> <initialOffset:earliest/latest> [<outputFile>]");
             System.exit(1);
         }
         System.setProperty("hazelcast.logging.type", "log4j");
         String brokerUri = args[0];
         String topic = args[1];
         String initialOffset = args[2];
+        String fileName = args.length > 3 ? args[3] : null;
 
         JetConfig jetConfig = new JetConfig();
         SerializerConfig serializerConfig = new SerializerConfig()
@@ -81,7 +84,7 @@ public class JetLatencyMonitor {
                 WindowingProcessors.groupByFrame(Trade::getTicker, Trade::getTime, windowDef, windowOperation));
         Vertex slidingW = dag.newVertex("slidingW",
                 slidingWindow(windowDef, windowOperation, false));
-        Vertex sink = dag.newVertex("sink",
+        Vertex sink1 = dag.newVertex("sink1",
                 () -> new Processor() {
                     public ILogger logger;
 
@@ -95,13 +98,13 @@ public class JetLatencyMonitor {
                         long now = System.nanoTime();
                         long localSum = 0, localCount = 0;
                         for (Frame<String, Optional<Trade>> frame; (frame = (Frame<String, Optional<Trade>>) inbox.poll()) != null; ) {
-//                            logger.info("sink-frame=" + frame + ", now=" + System.nanoTime());
+//                            logger.info("sink1-frame=" + frame + ", now=" + System.nanoTime());
                             // frame contains the trade with maximum ingestionTime
                             long latency = now - frame.getValue().get().getIngestionTime();
                             localSum += latency;
                             localCount++;
                         };
-                        //logger.info("sink-frame drained=" + drainedCount + " frames, now=" + System.nanoTime() + ", iterationCnt=" + iterationCnt);
+                        //logger.info("sink1-frame drained=" + drainedCount + " frames, now=" + System.nanoTime() + ", iterationCnt=" + iterationCnt);
 
                         totalSum.addAndGet(localSum);
                         totalCount.addAndGet(localCount);
@@ -114,7 +117,13 @@ public class JetLatencyMonitor {
                 .edge(between(insertPunctuation, groupByF).partitioned(Trade::getTicker, HASH_CODE))
                 .edge(between(groupByF, slidingW).partitioned(Frame<Object, Object>::getKey)
                                                  .distributed())
-                .edge(between(slidingW, sink));
+                .edge(between(slidingW, sink1));
+
+        // add the file sink, if requested
+        if (fileName != null) {
+            Vertex sink2 = dag.newVertex("sink2", writeFile(fileName)).localParallelism(1);
+            dag.edge(from(slidingW, 1).to(sink2));
+        }
 
         ClientConfig clientConfig = new ClientConfig();
         clientConfig.getGroupConfig().setName("jet");
@@ -124,7 +133,7 @@ public class JetLatencyMonitor {
         client.newJob(dag).execute();
 
         while (true) {
-            Thread.sleep(2000);
+            Thread.sleep(1000);
             long sum = totalSum.get();
             long count = totalCount.get();
             totalSum.set(0);
