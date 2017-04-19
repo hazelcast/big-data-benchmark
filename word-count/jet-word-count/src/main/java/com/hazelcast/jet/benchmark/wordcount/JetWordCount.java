@@ -14,9 +14,9 @@ import org.apache.hadoop.mapred.TextOutputFormat;
 import java.util.Map.Entry;
 import java.util.StringTokenizer;
 
+import static com.hazelcast.jet.DistributedFunctions.entryKey;
+import static com.hazelcast.jet.DistributedFunctions.wholeItem;
 import static com.hazelcast.jet.Edge.between;
-import static com.hazelcast.jet.KeyExtractors.entryKey;
-import static com.hazelcast.jet.KeyExtractors.wholeItem;
 import static com.hazelcast.jet.Partitioner.HASH_CODE;
 import static com.hazelcast.jet.Processors.flatMap;
 import static com.hazelcast.jet.Processors.groupAndAccumulate;
