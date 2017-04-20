@@ -9,6 +9,7 @@ import java.util.List;
 import java.util.LongSummaryStatistics;
 import java.util.Properties;
 import java.util.UUID;
+import java.util.concurrent.TimeUnit;
 import java.util.stream.StreamSupport;
 
 public class TradeTestConsumer {
@@ -20,20 +21,24 @@ public class TradeTestConsumer {
         props.setProperty("key.deserializer", LongDeserializer.class.getName());
         props.setProperty("value.deserializer", TradeDeserializer.class.getName());
         props.setProperty("auto.offset.reset", "earliest");
-        props.setProperty("max.poll.records", "1024");
+        props.setProperty("max.partition.fetch.bytes", "32768");
         KafkaConsumer<Long, Trade> consumer = new KafkaConsumer<>(props);
         List<String> topics = Arrays.asList(args[1]);
         consumer.subscribe(topics);
         System.out.println("Subscribed to topics " + topics);
         long count = 0;
+        long start = System.nanoTime();
         while (true) {
             ConsumerRecords<Long, Trade> poll = consumer.poll(5000);
-            System.out.println(poll.partitions());
-            LongSummaryStatistics longSummaryStatistics = StreamSupport.stream(poll.spliterator(), false)
-                                                                       .mapToLong(r -> r.value().getTime()).summaryStatistics();
-            System.out.println(longSummaryStatistics);
-            count += longSummaryStatistics.getCount();
-            System.out.println("Total count: " + count);
+//            System.out.println(poll.partitions());
+//            LongSummaryStatistics longSummaryStatistics = StreamSupport.stream(poll.spliterator(), false)
+//                                                                       .mapToLong(r -> r.value().getTime()).summaryStatistics();
+//            System.out.println(longSummaryStatistics);
+            count += poll.count();
+            long elapsed = TimeUnit.NANOSECONDS.toMillis(System.nanoTime() - start);
+            System.out.println("Total count: " + count  + " in " + elapsed  + "ms. Average rate: " + (double)
+                    count/elapsed * 1000 + " records/sec ");
+
         }
     }
 

@@ -2,6 +2,7 @@ package com.hazelcast.jet.benchmark.trademonitor;
 
 import com.hazelcast.client.config.ClientConfig;
 import com.hazelcast.config.SerializerConfig;
+import com.hazelcast.jet.AbstractProcessor;
 import com.hazelcast.jet.DAG;
 import com.hazelcast.jet.Distributed.Optional;
 import com.hazelcast.jet.Inbox;
@@ -10,7 +11,6 @@ import com.hazelcast.jet.JetInstance;
 import com.hazelcast.jet.Outbox;
 import com.hazelcast.jet.Processor;
 import com.hazelcast.jet.Punctuation;
-import com.hazelcast.jet.StreamingProcessorBase;
 import com.hazelcast.jet.Vertex;
 import com.hazelcast.jet.config.JetConfig;
 import com.hazelcast.jet.windowing.Frame;
@@ -142,7 +142,7 @@ public class JetLatencyMonitor {
         }
     }
 
-    static class PeekP extends StreamingProcessorBase {
+    static class PeekP extends AbstractProcessor {
 
         private long start;
 

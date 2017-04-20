@@ -2,12 +2,12 @@ package com.hazelcast.jet.benchmark.trademonitor;
 
 import com.hazelcast.client.config.ClientConfig;
 import com.hazelcast.config.SerializerConfig;
+import com.hazelcast.jet.AbstractProcessor;
 import com.hazelcast.jet.DAG;
 import com.hazelcast.jet.Jet;
 import com.hazelcast.jet.JetInstance;
 import com.hazelcast.jet.Processors;
 import com.hazelcast.jet.Punctuation;
-import com.hazelcast.jet.StreamingProcessorBase;
 import com.hazelcast.jet.Vertex;
 import com.hazelcast.jet.config.JetConfig;
 import com.hazelcast.jet.windowing.Frame;
@@ -92,7 +92,7 @@ public class JetTradeMonitor {
         }
     }
 
-    static class PeekP extends StreamingProcessorBase {
+    static class PeekP extends AbstractProcessor {
 
         private long start;
 
