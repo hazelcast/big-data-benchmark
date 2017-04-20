@@ -15,6 +15,7 @@ import java.nio.file.Paths;
 import java.util.HashMap;
 import java.util.Map;
 import java.util.Properties;
+import java.util.concurrent.TimeUnit;
 import java.util.concurrent.atomic.AtomicInteger;
 import java.util.stream.IntStream;
 import java.util.stream.LongStream;
@@ -48,17 +49,23 @@ public class TradeProducer {
         long tradesPerSecond = Long.parseLong(args[2]);
         long numSeconds = Long.parseLong(args[3]);
 
-        long start = System.currentTimeMillis();
+        long start = System.nanoTime();
         TradeProducer tradeProducer = new TradeProducer(broker);
 
+        long totalProduced = 0;
         for (long i = 0; i < numSeconds; i++) {
+            long batchStart = System.nanoTime();
             tradeProducer.produce(topic, i, tradesPerSecond);
+            totalProduced += tradesPerSecond;
+            long batchEnd = System.nanoTime();
+            long batchElapsed = batchEnd - batchStart;
+            long totalElapsed = batchEnd - start;
+            long batchRate = (long) ((double) tradesPerSecond / batchElapsed * TimeUnit.SECONDS.toNanos(1));
+            long totalRate = (long) ((double) totalProduced / totalElapsed * TimeUnit.SECONDS.toNanos(1));
+            System.out.printf("Produced %,d records in %,d ms. Batch rate: %,d Total rate: %,d records/s%n",
+                    totalProduced, TimeUnit.NANOSECONDS.toMillis(totalElapsed), batchRate, totalRate);
         }
         tradeProducer.close();
-        long time = System.currentTimeMillis() - start;
-        double records = tradesPerSecond * numSeconds;
-        System.out.println("Produced " + (long)records + " records in " + time + " seconds. Average rate: " + records
-                /time*1000);
     }
 
     private void close() {
@@ -67,7 +74,6 @@ public class TradeProducer {
     }
 
     private void produce(String topic, long time, long count) {
-        System.out.println("Producing second " + time);
         for (long i = 0; i < count; i++) {
             Trade trade = nextTrade(time);
             producer.send(new ProducerRecord<>(topic, trade));
