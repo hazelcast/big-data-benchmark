@@ -21,7 +21,7 @@ public class TradeTestConsumer {
         props.setProperty("key.deserializer", LongDeserializer.class.getName());
         props.setProperty("value.deserializer", TradeDeserializer.class.getName());
         props.setProperty("auto.offset.reset", "earliest");
-        props.setProperty("max.partition.fetch.bytes", "32768");
+        props.setProperty("max.partition.fetch.bytes", "1024");
         KafkaConsumer<Long, Trade> consumer = new KafkaConsumer<>(props);
         List<String> topics = Arrays.asList(args[1]);
         consumer.subscribe(topics);
@@ -30,14 +30,14 @@ public class TradeTestConsumer {
         long start = System.nanoTime();
         while (true) {
             ConsumerRecords<Long, Trade> poll = consumer.poll(5000);
-//            System.out.println(poll.partitions());
-//            LongSummaryStatistics longSummaryStatistics = StreamSupport.stream(poll.spliterator(), false)
-//                                                                       .mapToLong(r -> r.value().getTime()).summaryStatistics();
-//            System.out.println(longSummaryStatistics);
+            System.out.println("Partitions in batch: " + poll.partitions());
+            LongSummaryStatistics stats = StreamSupport.stream(poll.spliterator(), false)
+                                                                       .mapToLong(r -> r.value().getTime()).summaryStatistics();
+            System.out.println("Oldest record time: " + stats.getMin() + ", newest record: " + stats.getMax());
             count += poll.count();
             long elapsed = TimeUnit.NANOSECONDS.toMillis(System.nanoTime() - start);
-            System.out.println("Total count: " + count  + " in " + elapsed  + "ms. Average rate: " + (double)
-                    count/elapsed * 1000 + " records/sec ");
+            long rate = (long) ((double) count / elapsed * 1000);
+            System.out.printf("Total count: %,d in %,dms. Average rate: %,d records/s %n", count, elapsed, rate);
 
         }
     }
