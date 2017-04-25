@@ -9,6 +9,7 @@ import java.io.InputStreamReader;
 import java.util.HashMap;
 import java.util.Map;
 import java.util.Properties;
+import java.util.concurrent.CyclicBarrier;
 import java.util.concurrent.ExecutorService;
 import java.util.concurrent.Executors;
 import java.util.concurrent.TimeUnit;
@@ -53,6 +54,7 @@ public class TradeProducer implements AutoCloseable {
 
         AtomicLong totalProduced = new AtomicLong();
         final long start = System.nanoTime();
+        CyclicBarrier barrier = new CyclicBarrier(numProducers);
         for (int j = 0; j < numProducers; j++) {
             int producerIdx = j;
             service.submit(() -> {
@@ -72,6 +74,11 @@ public class TradeProducer implements AutoCloseable {
                                 TimeUnit.NANOSECONDS.toMillis(totalElapsed), batchRate);
                         System.out.printf("Aggregate: Produced %,d records. Total rate: %,d records/s%n",
                                 totalProduced.get(), totalRate);
+                        try {
+                            barrier.await();
+                        } catch (Exception e) {
+                            throw new RuntimeException(e);
+                        }
                     }
                 }
             });
