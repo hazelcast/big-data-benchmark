@@ -16,8 +16,10 @@
 
 package com.hazelcast.jet.benchmark.trademonitor;
 
+import org.apache.commons.lang3.mutable.MutableLong;
 import org.apache.flink.api.common.JobExecutionResult;
-import org.apache.flink.api.common.functions.ReduceFunction;
+import org.apache.flink.api.common.functions.FoldFunction;
+import org.apache.flink.api.java.tuple.Tuple2;
 import org.apache.flink.api.java.tuple.Tuple3;
 import org.apache.flink.core.fs.FileSystem.WriteMode;
 import org.apache.flink.streaming.api.TimeCharacteristic;
@@ -50,13 +52,13 @@ public class FlinkLatencyMonitor {
     public static void main(String[] args) throws Exception {
         if (args.length < 3 || args.length > 4) {
             System.err.println("Usage:");
-            System.err.println("  "+FlinkLatencyMonitor.class.getSimpleName()+" <bootstrap.servers> <topic> <initialOffset:earliest/latest> [<outputFile>]");
+            System.err.println("  "+FlinkLatencyMonitor.class.getSimpleName()+" <bootstrap.servers> <topic> <slideBy> [<outputFile>]");
             System.exit(1);
         }
         System.setProperty("hazelcast.logging.type", "log4j");
         String brokerUri = args[0];
         String topic = args[1];
-        String initialOffset = args[2];
+        int slideBy = Integer.parseInt(args[2]);
         String fileName = args.length > 3 ? args[3] : null;
 
         // set up the execution environment
@@ -74,7 +76,7 @@ public class FlinkLatencyMonitor {
         };
 
         DataStreamSource<Trade> trades = env.addSource(new FlinkKafkaConsumer010<>(topic,
-                schema, getKafkaProperties(brokerUri, initialOffset)));
+                schema, getKafkaProperties(brokerUri)));
         AssignerWithPeriodicWatermarks<Trade> timestampExtractor
                 = new BoundedOutOfOrdernessTimestampExtractor<Trade>(Time.milliseconds(1000)) {
             @Override
@@ -90,19 +92,25 @@ public class FlinkLatencyMonitor {
                 })
                 .assignTimestampsAndWatermarks(timestampExtractor)
                 .keyBy(Trade::getTicker)
-                .window(SlidingEventTimeWindows.of(Time.milliseconds(10000), Time.milliseconds(1000)))
-                .reduce(new ReduceFunction<Trade>() {
-                    @Override
-                    public Trade reduce(Trade value1, Trade value2) throws Exception {
-                        return value1.getIngestionTime() > value2.getIngestionTime() ? value1 : value2;
-                    }
-                }, new WindowFunction<Trade, Tuple3<Long, String, Long>, String, TimeWindow>() {
+                .window(SlidingEventTimeWindows.of(Time.milliseconds(10000), Time.milliseconds(slideBy)))
+                .fold(new Tuple2<MutableLong, MutableLong>(new MutableLong(), new MutableLong()),
+                        new FoldFunction<Trade, Tuple2<MutableLong, MutableLong>>() {
+                                @Override
+                                public Tuple2<MutableLong, MutableLong> fold(
+                                        Tuple2<MutableLong, MutableLong> accumulator, Trade trade
+                                ) {
+                                    accumulator.f0.setValue(Math.addExact(accumulator.f0.longValue(), trade.getIngestionTime()));
+                                    accumulator.f1.increment();
+                                    return accumulator;
+                                }
+                }, new WindowFunction<Tuple2<MutableLong, MutableLong>, Tuple3<Long, String, Long>, String, TimeWindow>() {
                     @Override
                     public void apply(String key, TimeWindow window,
-                            Iterable<Trade> input,
+                            Iterable<Tuple2<MutableLong, MutableLong>> input,
                             Collector<Tuple3<Long, String, Long>> out) throws Exception {
-                        Trade latestTrade = input.iterator().next();
-                        out.collect(new Tuple3<>(window.getEnd(), key, latestTrade.getIngestionTime()));
+                        Tuple2<MutableLong, MutableLong> avgIngestionTimeAcc = input.iterator().next();
+                        long avgIngestionTime = avgIngestionTimeAcc.f0.longValue() / avgIngestionTimeAcc.f1.longValue();
+                        out.collect(new Tuple3<>(window.getEnd(), key, avgIngestionTime));
                     }
                 });
         finalStream
@@ -139,13 +147,12 @@ public class FlinkLatencyMonitor {
         JobExecutionResult execute = env.execute("Trade Monitor Example");
     }
 
-    private static Properties getKafkaProperties(String brokerUrl, String initialOffset) {
+    private static Properties getKafkaProperties(String brokerUrl) {
         Properties props = new Properties();
         props.setProperty("bootstrap.servers", brokerUrl);
         props.setProperty("group.id", UUID.randomUUID().toString());
         props.setProperty("key.deserializer", LongDeserializer.class.getName());
         props.setProperty("value.deserializer", TradeDeserializer.class.getName());
-        props.setProperty("auto.offset.reset", initialOffset);
         props.setProperty("max.poll.records", "32768");
         return props;
     }
