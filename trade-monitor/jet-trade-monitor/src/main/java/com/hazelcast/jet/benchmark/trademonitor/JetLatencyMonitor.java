@@ -97,7 +97,11 @@ public class JetLatencyMonitor {
                     public void process(int ordinal, Inbox inbox) {
                         long now = System.nanoTime();
                         long localSum = 0, localCount = 0;
-                        for (Frame<String, Optional<Trade>> frame; (frame = (Frame<String, Optional<Trade>>) inbox.poll()) != null; ) {
+                        for (Object o; (o = inbox.poll()) != null; ) {
+                            if (o instanceof Punctuation) {
+                                continue;
+                            }
+                            Frame<String, Optional<Trade>> frame = (Frame<String, Optional<Trade>>) o;
 //                            logger.info("sink1-frame=" + frame + ", now=" + System.nanoTime());
                             // frame contains the trade with maximum ingestionTime
                             long latency = now - frame.getValue().get().getIngestionTime();
