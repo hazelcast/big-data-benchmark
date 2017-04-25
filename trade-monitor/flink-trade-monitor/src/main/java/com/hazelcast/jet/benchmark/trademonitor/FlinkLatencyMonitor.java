@@ -86,10 +86,6 @@ public class FlinkLatencyMonitor {
         };
 
         SingleOutputStreamOperator<Tuple3<Long, String, Long>> finalStream = trades
-                .map((Trade trade) -> {
-                    trade.setIngestionTime(System.nanoTime());
-                    return trade;
-                })
                 .assignTimestampsAndWatermarks(timestampExtractor)
                 .keyBy(Trade::getTicker)
                 .window(SlidingEventTimeWindows.of(Time.milliseconds(10000), Time.milliseconds(slideBy)))
@@ -99,7 +95,7 @@ public class FlinkLatencyMonitor {
                                 public Tuple2<MutableLong, MutableLong> fold(
                                         Tuple2<MutableLong, MutableLong> accumulator, Trade trade
                                 ) {
-                                    accumulator.f0.setValue(Math.addExact(accumulator.f0.longValue(), trade.getIngestionTime()));
+                                    accumulator.f0.setValue(Math.addExact(accumulator.f0.longValue(), trade.getPrice()));
                                     accumulator.f1.increment();
                                     return accumulator;
                                 }
@@ -108,16 +104,16 @@ public class FlinkLatencyMonitor {
                     public void apply(String key, TimeWindow window,
                             Iterable<Tuple2<MutableLong, MutableLong>> input,
                             Collector<Tuple3<Long, String, Long>> out) throws Exception {
-                        Tuple2<MutableLong, MutableLong> avgIngestionTimeAcc = input.iterator().next();
-                        long avgIngestionTime = avgIngestionTimeAcc.f0.longValue() / avgIngestionTimeAcc.f1.longValue();
-                        out.collect(new Tuple3<>(window.getEnd(), key, avgIngestionTime));
+                        Tuple2<MutableLong, MutableLong> avgPriceAcc = input.iterator().next();
+                        long avgPrice = avgPriceAcc.f0.longValue() / avgPriceAcc.f1.longValue();
+                        out.collect(new Tuple3<>(window.getEnd(), key, avgPrice));
                     }
                 });
         finalStream
                 .addSink(new RichSinkFunction<Tuple3<Long, String, Long>>() {
                     @Override
                     public void invoke(Tuple3<Long, String, Long> value) throws Exception {
-                        long latency = System.nanoTime() - value.f2;
+                        long latency = System.currentTimeMillis() - value.f0;
                         //logger.info("sink1-frame drained=" + drainedCount + " frames, now=" + System.nanoTime() + ", iterationCnt=" + iterationCnt);
 
                         totalSum.addAndGet(latency);
@@ -140,7 +136,7 @@ public class FlinkLatencyMonitor {
                 long count = totalCount.get();
                 totalSum.set(0);
                 totalCount.set(0);
-                System.out.println("average latency=" + (count != 0 ? sum / count / 1_000_000 + "ms" : "?") + ", count=" + count);
+                System.out.println("average latency=" + (count != 0 ? sum / count + "ms" : "?") + ", count=" + count);
             }
         }).start();
 

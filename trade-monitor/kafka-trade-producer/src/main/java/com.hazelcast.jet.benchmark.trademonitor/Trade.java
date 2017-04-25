@@ -22,7 +22,6 @@ public class Trade {
     private final String ticker;
     private final int quantity;
     private final int price; // in cents
-    private long ingestionTime;
 
     Trade(long time, String ticker, int quantity, int price) {
         this.time = time;
@@ -47,17 +46,8 @@ public class Trade {
         return price;
     }
 
-    public long getIngestionTime() {
-        return ingestionTime;
-    }
-
-    public void setIngestionTime(long ingestionTime) {
-        this.ingestionTime = ingestionTime;
-    }
-
     @Override
     public String toString() {
-        return "Trade{time=" + time + ", ticker='" + ticker + '\'' + ", quantity=" + quantity + ", price=" + price +
-                ", ingestionTime=" + ingestionTime + '}';
+        return "Trade{time=" + time + ", ticker='" + ticker + '\'' + ", quantity=" + quantity + ", price=" + price + '}';
     }
 }

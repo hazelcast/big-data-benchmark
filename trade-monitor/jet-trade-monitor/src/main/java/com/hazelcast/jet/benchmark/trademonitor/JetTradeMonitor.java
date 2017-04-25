@@ -62,7 +62,7 @@ public class JetTradeMonitor {
                 insertPunctuation(Trade::getTime, () -> cappingEventSeqLagAndRetention(1, 100)
                         .throttleByFrame(slidingWindow)));
         Vertex groupByF = dag.newVertex("group-by-frame",
-                WindowingProcessors.groupByFrame(Trade::getTicker, Trade::getTime, slidingWindow, counting()));
+                WindowingProcessors.<Trade, String, Object>groupByFrame(Trade::getTicker, Trade::getTime, slidingWindow, null));
         Vertex slidingW = dag.newVertex("sliding-window",
                 slidingWindow(slidingWindow, counting(), false));
         Vertex addTimestamp = dag.newVertex("timestamp",

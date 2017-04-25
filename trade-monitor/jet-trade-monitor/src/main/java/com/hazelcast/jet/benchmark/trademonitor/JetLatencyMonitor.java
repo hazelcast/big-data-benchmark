@@ -22,13 +22,14 @@ import java.util.Properties;
 import java.util.UUID;
 import java.util.concurrent.atomic.AtomicLong;
 
+import static com.hazelcast.jet.DistributedFunctions.entryValue;
 import static com.hazelcast.jet.Edge.between;
 import static com.hazelcast.jet.Edge.from;
 import static com.hazelcast.jet.Partitioner.HASH_CODE;
 import static com.hazelcast.jet.Processors.map;
 import static com.hazelcast.jet.Processors.writeFile;
 import static com.hazelcast.jet.connector.kafka.StreamKafkaP.streamKafka;
-import static com.hazelcast.jet.windowing.PunctuationPolicies.cappingEventSeqLagAndLull;
+import static com.hazelcast.jet.windowing.PunctuationPolicies.cappingEventSeqLag;
 import static com.hazelcast.jet.windowing.WindowingProcessors.insertPunctuation;
 import static com.hazelcast.jet.windowing.WindowingProcessors.slidingWindow;
 
@@ -56,7 +57,7 @@ public class JetLatencyMonitor {
         WindowOperation<Trade, TupleLongLong, Long> windowOperation = WindowOperation.of(
                 TupleLongLong::new,
                 (acc, trade) -> {
-                    acc.sum = Math.addExact(acc.sum, trade.getIngestionTime());
+                    acc.sum = Math.addExact(acc.sum, trade.getPrice());
                     acc.count++;
                 },
                 (acc1, acc2) -> {
@@ -74,12 +75,9 @@ public class JetLatencyMonitor {
 
         DAG dag = new DAG();
         Vertex readKafka = dag.newVertex("readKafka", streamKafka(kafkaProps, topic));
-        Vertex extractTrade = dag.newVertex("extractTrade", map((Map.Entry<?, Trade> e) -> {
-            e.getValue().setIngestionTime(System.nanoTime());
-            return e.getValue();
-        }));
+        Vertex extractTrade = dag.newVertex("extractTrade", map(entryValue()));
         Vertex insertPunctuation = dag.newVertex("insertPunctuation",
-                insertPunctuation(Trade::getTime, () -> cappingEventSeqLagAndLull(1000, 2000)
+                insertPunctuation(Trade::getTime, () -> cappingEventSeqLag(1000)
                         .throttleByFrame(windowDef)));
         Vertex groupByF = dag.newVertex("groupByF",
                 WindowingProcessors.groupByFrame(Trade::getTicker, Trade::getTime, windowDef, windowOperation));
@@ -96,20 +94,17 @@ public class JetLatencyMonitor {
 
                     @Override
                     public void process(int ordinal, Inbox inbox) {
-                        long now = System.nanoTime();
+                        long now = System.currentTimeMillis();
                         long localSum = 0, localCount = 0;
                         for (Object o; (o = inbox.poll()) != null; ) {
                             if (o instanceof Punctuation) {
                                 continue;
                             }
                             Frame<String, Long> frame = (Frame<String, Long>) o;
-//                            logger.info("sink1-frame=" + frame + ", now=" + System.nanoTime());
-                            // frame contains the trade with maximum ingestionTime
-                            long latency = now - frame.getValue();
+                            long latency = now - frame.getSeq();
                             localSum += latency;
                             localCount++;
-                        };
-                        //logger.info("sink1-frame drained=" + drainedCount + " frames, now=" + System.nanoTime() + ", iterationCnt=" + iterationCnt);
+                        }
 
                         totalSum.addAndGet(localSum);
                         totalCount.addAndGet(localCount);
@@ -142,7 +137,7 @@ public class JetLatencyMonitor {
             long count = totalCount.get();
             totalSum.set(0);
             totalCount.set(0);
-            System.out.println("average latency=" + (count != 0 ? sum / count / 1_000_000 + "ms" : "?") + ", count=" + count);
+            System.out.println("average latency=" + (count != 0 ? sum / count + "ms" : "?") + ", count=" + count);
         }
     }
 
