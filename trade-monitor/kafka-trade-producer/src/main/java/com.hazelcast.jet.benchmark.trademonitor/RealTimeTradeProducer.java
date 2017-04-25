@@ -15,6 +15,7 @@ import java.util.concurrent.locks.LockSupport;
 import java.util.stream.Stream;
 
 import static java.util.concurrent.TimeUnit.MILLISECONDS;
+import static java.util.concurrent.TimeUnit.NANOSECONDS;
 
 public class RealTimeTradeProducer {
 
@@ -46,20 +47,23 @@ public class RealTimeTradeProducer {
 
         RealTimeTradeProducer tradeProducer = new RealTimeTradeProducer(broker, tradesPerSecond);
 
-        long start = System.nanoTime();
+        final long start = System.nanoTime();
+        long totalTradesProduced = 0;
         for (long second = 0; second < numSeconds; second++) {
-
             for (long j = 0, k = 0; j < tradesPerSecond; j++, k++) {
-                Trade trade = tradeProducer.nextTrade(second * 1000 + j * 1000 / tradesPerSecond);
+                Trade trade = tradeProducer.nextTrade(System.currentTimeMillis());
                 tradeProducer.send(topic, trade);
+                totalTradesProduced++;
                 if (k == Math.min(100, tradesPerSecond-1)) {
-                    long sleepTime = start + MILLISECONDS.toNanos(trade.getTime()) - System.nanoTime();
+                    long expectedTimeMs = second * 1000 + j * 1000 / tradesPerSecond;
+                    long sleepTime = start + MILLISECONDS.toNanos(expectedTimeMs) - System.nanoTime();
                     LockSupport.parkNanos(sleepTime);
                     k = 0;
                 }
             }
 
-            System.out.println("Produced " + tradesPerSecond + " trades at seq " + second + " to topic '" + topic + '\'');
+            System.out.println("Produced " + tradesPerSecond + " trades to topic '" + topic + '\''
+                    + ", current lag=" + (tradesPerSecond * NANOSECONDS.toMillis(System.nanoTime() - start) / 1000 - totalTradesProduced));
         }
         tradeProducer.close();
     }
