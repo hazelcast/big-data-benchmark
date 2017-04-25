@@ -1,7 +1,7 @@
 <project xmlns="http://maven.apache.org/POM/4.0.0" xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"
          xsi:schemaLocation="http://maven.apache.org/POM/4.0.0 http://maven.apache.org/xsd/maven-4.0.0.xsd">
     <modelVersion>4.0.0</modelVersion>
-    <artifactId>jet-trade-monitor</artifactId>
+    <artifactId>jet-submit</artifactId>
     <packaging>jar</packaging>
 
     <parent>
@@ -18,7 +18,7 @@
                 <configuration>
                     <archive>
                         <manifest>
-                            <mainClass>com.hazelcast.jet.benchmark.trademonitor.JetTradeMonitor</mainClass>
+                            <mainClass>com.hazelcast.jet.JobSubmitter</mainClass>
                         </manifest>
                     </archive>
                 </configuration>
@@ -34,31 +34,14 @@
                         </goals>
                     </execution>
                 </executions>
-                <configuration>
-                    <artifactSet>
-                        <excludes>
-                            <exclude>com.hazelcast.jet:hazelcast-jet</exclude>
-                        </excludes>
-                    </artifactSet>
-                </configuration>
             </plugin>
         </plugins>
     </build>
 
     <dependencies>
         <dependency>
-            <groupId>com.hazelcast.jet.benchmark</groupId>
-            <artifactId>jet-submit</artifactId>
-            <version>${project.version}</version>
-        </dependency>
-        <dependency>
             <groupId>com.hazelcast.jet</groupId>
-            <artifactId>hazelcast-jet-kafka</artifactId>
-        </dependency>
-        <dependency>
-            <groupId>com.hazelcast.jet.benchmark</groupId>
-            <artifactId>kafka-trade-producer</artifactId>
-            <version>${project.version}</version>
+            <artifactId>hazelcast-jet</artifactId>
         </dependency>
         <dependency>
             <groupId>log4j</groupId>

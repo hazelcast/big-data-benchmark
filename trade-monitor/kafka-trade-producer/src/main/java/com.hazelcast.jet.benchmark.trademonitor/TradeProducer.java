@@ -3,72 +3,93 @@ package com.hazelcast.jet.benchmark.trademonitor;
 import org.apache.kafka.clients.producer.KafkaProducer;
 import org.apache.kafka.clients.producer.ProducerRecord;
 import org.apache.kafka.common.serialization.LongSerializer;
-import sun.misc.IOUtils;
 
 import java.io.BufferedReader;
-import java.io.IOException;
-import java.io.InputStream;
 import java.io.InputStreamReader;
-import java.net.URISyntaxException;
-import java.nio.file.Files;
-import java.nio.file.Paths;
 import java.util.HashMap;
 import java.util.Map;
 import java.util.Properties;
+import java.util.concurrent.CyclicBarrier;
+import java.util.concurrent.ExecutorService;
+import java.util.concurrent.Executors;
 import java.util.concurrent.TimeUnit;
-import java.util.concurrent.atomic.AtomicInteger;
-import java.util.stream.IntStream;
-import java.util.stream.LongStream;
-import java.util.stream.Stream;
+import java.util.concurrent.atomic.AtomicLong;
 
-public class TradeProducer {
+public class TradeProducer implements AutoCloseable {
 
-    private final KafkaProducer<Long, Trade> producer;
+    private static long SEC_TO_NANOS = TimeUnit.SECONDS.toNanos(1);
+
+    private KafkaProducer<Long, Trade> producer;
     private Map<String, Integer> tickersToPrice = new HashMap<>();
     private String[] tickers;
     private int tickerIndex;
     private long lag;
 
-    private TradeProducer(String broker) throws IOException, URISyntaxException {
+    private TradeProducer(String broker) {
         loadTickers();
         Properties props = new Properties();
         props.setProperty("bootstrap.servers", broker);
         props.setProperty("key.serializer", LongSerializer.class.getName());
         props.setProperty("value.serializer", TradeSerializer.class.getName());
-        this.producer = new KafkaProducer<>(props);
+        producer = new KafkaProducer<>(props);
     }
 
     public static void main(String[] args) throws Exception {
-        if (args.length != 4) {
+        if (args.length != 5) {
             System.err.println("Usage:");
-            System.err.println("  TradeProducer <bootstrap.servers> <topic> <trades per second> <number of seconds>");
+            System.err.println("  TradeProducer <bootstrap.servers> <topic> <num producers> <trades per second> " +
+                    "<number of seconds>");
             System.exit(1);
         }
+
+
         String broker = args[0];
         String topic = args[1];
-        long tradesPerSecond = Long.parseLong(args[2]);
-        long numSeconds = Long.parseLong(args[3]);
+        int numProducers = Integer.parseInt(args[2]);
+        long tradesPerSecond = Long.parseLong(args[3]);
+        long numSeconds = Long.parseLong(args[4]);
 
-        long start = System.nanoTime();
-        TradeProducer tradeProducer = new TradeProducer(broker);
 
-        long totalProduced = 0;
-        for (long i = 0; i < numSeconds; i++) {
-            long batchStart = System.nanoTime();
-            tradeProducer.produce(topic, i, tradesPerSecond);
-            totalProduced += tradesPerSecond;
-            long batchEnd = System.nanoTime();
-            long batchElapsed = batchEnd - batchStart;
-            long totalElapsed = batchEnd - start;
-            long batchRate = (long) ((double) tradesPerSecond / batchElapsed * TimeUnit.SECONDS.toNanos(1));
-            long totalRate = (long) ((double) totalProduced / totalElapsed * TimeUnit.SECONDS.toNanos(1));
-            System.out.printf("Produced %,d records in %,d ms. Batch rate: %,d Total rate: %,d records/s%n",
-                    totalProduced, TimeUnit.NANOSECONDS.toMillis(totalElapsed), batchRate, totalRate);
+        ExecutorService service = Executors.newCachedThreadPool();
+
+        AtomicLong totalProduced = new AtomicLong();
+        final long start = System.nanoTime();
+        CyclicBarrier barrier = new CyclicBarrier(numProducers);
+        for (int j = 0; j < numProducers; j++) {
+            int producerIdx = j;
+            service.submit(() -> {
+                try (TradeProducer tradeProducer = new TradeProducer(broker)) {
+                    for (long i = 0; i < numSeconds; i++) {
+                        long batchStart = System.nanoTime();
+                        tradeProducer.produce(topic, i, tradesPerSecond);
+                        totalProduced.addAndGet(tradesPerSecond);
+                        long producerProduced = i * tradesPerSecond;
+                        long batchEnd = System.nanoTime();
+                        long batchElapsed = batchEnd - batchStart;
+                        long totalElapsed = batchEnd - start;
+                        long batchRate = (long) ((double) tradesPerSecond / batchElapsed * SEC_TO_NANOS);
+                        long totalRate = (long) ((double) totalProduced.get() / totalElapsed * SEC_TO_NANOS);
+                        System.out.printf("Producer %d: Produced %,d records. Producer rate: %,d records/s%n",
+                                producerIdx, producerProduced,
+                                TimeUnit.NANOSECONDS.toMillis(totalElapsed), batchRate);
+                        System.out.printf("Aggregate: Produced %,d records. Total rate: %,d records/s%n",
+                                totalProduced.get(), totalRate);
+                        try {
+                            barrier.await();
+                        } catch (Exception e) {
+                            throw new RuntimeException(e);
+                        }
+                    }
+                }
+            });
         }
-        tradeProducer.close();
+        service.shutdown();
+        service.awaitTermination(Long.MAX_VALUE, TimeUnit.SECONDS);
+
     }
 
-    private void close() {
+    @Override
+    public void close() {
         producer.flush();
         producer.close();
     }
@@ -80,11 +101,13 @@ public class TradeProducer {
         }
     }
 
-    private void loadTickers() throws URISyntaxException, IOException {
+    private void loadTickers() {
         try (BufferedReader reader = new BufferedReader(new InputStreamReader(TradeProducer.class.getResourceAsStream
                 ("/nasdaqlisted.txt")))) {
             reader.lines().skip(1).map(l -> l.split("\\|")[0]).forEach(t -> tickersToPrice.put(t, 10000));
             tickers = tickersToPrice.keySet().toArray(new String[0]);
+        } catch (Exception e) {
+            throw new RuntimeException(e);
         }
     }
 
