@@ -24,8 +24,8 @@ public class RealTimeTradeProducer {
     private int tickerIndex;
     private long lag;
 
-    private RealTimeTradeProducer(String broker) throws IOException, URISyntaxException {
-        loadTickers();
+    private RealTimeTradeProducer(String broker, int tradesPerSecond) throws IOException, URISyntaxException {
+        loadTickers(tradesPerSecond);
         Properties props = new Properties();
         props.setProperty("bootstrap.servers", broker);
         props.setProperty("key.serializer", LongSerializer.class.getName());
@@ -41,10 +41,10 @@ public class RealTimeTradeProducer {
         }
         String broker = args[0];
         String topic = args[1];
-        long tradesPerSecond = Long.parseLong(args[2]);
+        int tradesPerSecond = Integer.parseInt(args[2]);
         long numSeconds = Long.parseLong(args[3]);
 
-        RealTimeTradeProducer tradeProducer = new RealTimeTradeProducer(broker);
+        RealTimeTradeProducer tradeProducer = new RealTimeTradeProducer(broker, tradesPerSecond);
 
         long start = System.nanoTime();
         for (long second = 0; second < numSeconds; second++) {
@@ -52,7 +52,7 @@ public class RealTimeTradeProducer {
             for (long j = 0, k = 0; j < tradesPerSecond; j++, k++) {
                 Trade trade = tradeProducer.nextTrade(second * 1000 + j * 1000 / tradesPerSecond);
                 tradeProducer.send(topic, trade);
-                if (k == 100) {
+                if (k == Math.min(100, tradesPerSecond-1)) {
                     long sleepTime = start + MILLISECONDS.toNanos(trade.getTime()) - System.nanoTime();
                     LockSupport.parkNanos(sleepTime);
                     k = 0;
@@ -73,9 +73,9 @@ public class RealTimeTradeProducer {
         producer.close();
     }
 
-    private void loadTickers() throws URISyntaxException, IOException {
+    private void loadTickers(long tradesPerSecond) throws URISyntaxException, IOException {
         Stream<String> lines = Files.lines(Paths.get(RealTimeTradeProducer.class.getResource("/nasdaqlisted.txt").toURI()));
-        lines.skip(1).map(l -> l.split("\\|")[0]).forEach(t -> tickersToPrice.put(t, 10000));
+        lines.skip(1).limit(tradesPerSecond).map(l -> l.split("\\|")[0]).forEach(t -> tickersToPrice.put(t, 10000));
         tickers = tickersToPrice.keySet().toArray(new String[0]);
     }
 
