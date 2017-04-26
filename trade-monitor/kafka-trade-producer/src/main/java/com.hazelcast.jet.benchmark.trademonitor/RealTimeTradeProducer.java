@@ -54,7 +54,7 @@ public class RealTimeTradeProducer {
                 Trade trade = tradeProducer.nextTrade(System.currentTimeMillis());
                 tradeProducer.send(topic, trade);
                 totalTradesProduced++;
-                if (k == Math.min(100, tradesPerSecond-1)) {
+                if (k == Math.min(100, tradesPerSecond / 10)) {
                     long expectedTimeMs = second * 1000 + j * 1000 / tradesPerSecond;
                     long sleepTime = start + MILLISECONDS.toNanos(expectedTimeMs) - System.nanoTime();
                     LockSupport.parkNanos(sleepTime);
