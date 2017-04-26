@@ -4,7 +4,6 @@ import com.hazelcast.client.config.ClientConfig;
 import com.hazelcast.jet.AbstractProcessor;
 import com.hazelcast.jet.DAG;
 import com.hazelcast.jet.Distributed;
-import com.hazelcast.jet.Distributed.Function;
 import com.hazelcast.jet.Jet;
 import com.hazelcast.jet.JetInstance;
 import com.hazelcast.jet.Vertex;
@@ -13,12 +12,12 @@ import com.hazelcast.jet.windowing.WindowDefinition;
 import com.hazelcast.jet.windowing.WindowOperation;
 import org.apache.kafka.common.serialization.LongDeserializer;
 
+import java.io.Serializable;
 import java.util.Properties;
 import java.util.UUID;
 
 import static com.hazelcast.jet.DistributedFunctions.entryValue;
 import static com.hazelcast.jet.Edge.between;
-import static com.hazelcast.jet.Edge.from;
 import static com.hazelcast.jet.Partitioner.HASH_CODE;
 import static com.hazelcast.jet.Processors.map;
 import static com.hazelcast.jet.Processors.writeFile;
@@ -43,12 +42,11 @@ public class JetLatencyMonitor {
         String outputFile = args[3];
 
         JetInstance jetInstance = Jet.newJetInstance();
+        Jet.newJetInstance();
 
         Properties kafkaProps = getKafkaProperties(brokerUri);
         WindowDefinition windowDef = WindowDefinition.slidingWindowDef(10000, slideBy);
-        WindowDefinition windowDefLatency = WindowDefinition.tumblingWindowDef(1000);
         WindowOperation<Trade, ?, Long> winOpAverageTradePrice = averageLongToLong(Trade::getPrice);
-        WindowOperation<Frame<?, Long>, ?, Long> winOpAverageLatency = averageLongToLong(Frame::getValue);
 
         int lag = 1000;
 
@@ -64,10 +62,6 @@ public class JetLatencyMonitor {
                 slidingWindow(windowDef, winOpAverageTradePrice));
         Vertex mapToLatency = dag.newVertex("mapToLatency",
                 map((Frame frame) -> new Frame<>(frame.getSeq(), 0, System.currentTimeMillis() - frame.getSeq() - lag)));
-        Vertex groupByF2 = dag.newVertex("groupByF2",
-                groupByFrame(Frame::getKey, frame -> frame.getSeq() - 1, windowDefLatency, winOpAverageLatency));
-        Vertex slidingW2 = dag.newVertex("slidingW2",
-                slidingWindow(windowDefLatency, winOpAverageLatency));
         Vertex fileSink = dag.newVertex("fileSink", writeFile(outputFile)).localParallelism(1);
 
         dag
@@ -82,16 +76,11 @@ public class JetLatencyMonitor {
                         .distributed())
                 .edge(between(slidingW, mapToLatency)
                         .oneToMany())
-                .edge(between(mapToLatency, groupByF2)
-                        .oneToMany())
-                .edge(between(groupByF2, slidingW2)
-                        .partitioned((Function<Frame, Object>) Frame::getKey)
-                        .distributed())
-                .edge(between(slidingW2, fileSink));
+                .edge(between(mapToLatency, fileSink));
 
         // peeks
-        Vertex peek = dag.newVertex("peek", PeekP::new);
-        dag.edge(from(slidingW2, 1).to(peek).oneToMany());
+//        Vertex peek = dag.newVertex("peek", PeekP::new);
+//        dag.edge(from(extractTrade, 1).to(peek).oneToMany());
 //        dag.edge(from(slidingW, 1).to(peek));
 
         ClientConfig clientConfig = new ClientConfig();
@@ -126,7 +115,7 @@ public class JetLatencyMonitor {
 
         @Override
         protected boolean tryProcess(int ordinal, Object item) throws Exception {
-            System.out.println(item);
+            getLogger().info(item.toString());
             return true;
         }
 
@@ -147,7 +136,7 @@ public class JetLatencyMonitor {
         return props;
     }
 
-    public static class TupleLongLong {
+    public static class TupleLongLong implements Serializable {
         public long sum;
         public long count;
     }

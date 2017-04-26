@@ -19,15 +19,14 @@ package com.hazelcast.jet.benchmark.trademonitor;
 import org.apache.commons.lang3.mutable.MutableLong;
 import org.apache.flink.api.common.JobExecutionResult;
 import org.apache.flink.api.common.functions.FoldFunction;
+import org.apache.flink.api.common.typeinfo.TypeHint;
 import org.apache.flink.api.java.tuple.Tuple2;
 import org.apache.flink.api.java.tuple.Tuple3;
 import org.apache.flink.core.fs.FileSystem.WriteMode;
 import org.apache.flink.streaming.api.TimeCharacteristic;
 import org.apache.flink.streaming.api.datastream.DataStreamSource;
-import org.apache.flink.streaming.api.datastream.SingleOutputStreamOperator;
 import org.apache.flink.streaming.api.environment.StreamExecutionEnvironment;
 import org.apache.flink.streaming.api.functions.AssignerWithPunctuatedWatermarks;
-import org.apache.flink.streaming.api.functions.sink.RichSinkFunction;
 import org.apache.flink.streaming.api.functions.windowing.WindowFunction;
 import org.apache.flink.streaming.api.watermark.Watermark;
 import org.apache.flink.streaming.api.windowing.assigners.SlidingEventTimeWindows;
@@ -43,25 +42,21 @@ import javax.annotation.Nullable;
 import java.io.IOException;
 import java.util.Properties;
 import java.util.UUID;
-import java.util.concurrent.atomic.AtomicLong;
 
 public class FlinkLatencyMonitor {
 
-    private static final AtomicLong totalSum = new AtomicLong();
-    private static final AtomicLong totalCount = new AtomicLong();
-
     public static void main(String[] args) throws Exception {
-        if (args.length < 3 || args.length > 4) {
+        if (args.length != 4) {
             System.err.println("Usage:");
             System.err.println("  "+FlinkLatencyMonitor.class.getSimpleName()
-                    + " <bootstrap.servers> <topic> <slideBy> [<outputFile>]");
+                    + " <bootstrap.servers> <topic> <slideBy> <outputFile>");
             System.exit(1);
         }
         System.setProperty("hazelcast.logging.type", "log4j");
-        String brokerUri = args[0];
-        String topic = args[1];
-        int slideBy = Integer.parseInt(args[2]);
-        String fileName = args.length > 3 ? args[3] : null;
+        final String brokerUri = args[0];
+        final String topic = args[1];
+        final int slideBy = Integer.parseInt(args[2]);
+        final String fileName = args[3];
 
         // set up the execution environment
         StreamExecutionEnvironment env = StreamExecutionEnvironment.getExecutionEnvironment();
@@ -100,7 +95,7 @@ public class FlinkLatencyMonitor {
             }
         };
 
-        SingleOutputStreamOperator<Tuple3<Long, String, Long>> finalStream = trades
+        trades
                 .assignTimestampsAndWatermarks(timestampExtractor2)
                 .keyBy(Trade::getTicker)
                 .window(SlidingEventTimeWindows.of(Time.milliseconds(10000), Time.milliseconds(slideBy)))
@@ -123,36 +118,14 @@ public class FlinkLatencyMonitor {
                         long avgPrice = avgPriceAcc.f0.longValue() / avgPriceAcc.f1.longValue();
                         out.collect(new Tuple3<>(window.getEnd(), key, avgPrice));
                     }
-                });
-        finalStream
-                .addSink(new RichSinkFunction<Tuple3<Long, String, Long>>() {
-                    @Override
-                    public void invoke(Tuple3<Long, String, Long> value) throws Exception {
-                        long latency = System.currentTimeMillis() - value.f0;
-
-                        totalSum.addAndGet(latency);
-                        totalCount.addAndGet(1);
-                    }
-                });
-        if (fileName != null) {
-            finalStream
-                    .writeAsCsv(fileName, WriteMode.OVERWRITE);
-        }
-
-        new Thread(() -> {
-            while (true) {
-                try {
-                    Thread.sleep(1000);
-                } catch (InterruptedException e) {
-                    return;
-                }
-                long sum = totalSum.get();
-                long count = totalCount.get();
-                totalSum.set(0);
-                totalCount.set(0);
-                System.out.println("average latency=" + (count != 0 ? (sum / count - lag) + "ms" : "?") + ", count=" + count);
-            }
-        }).start();
+                })
+                .map(tuple -> {
+                    // replace the value in tuple with latency
+                    tuple.f2 = System.currentTimeMillis() - tuple.f0 - lag;
+                    return tuple;
+                })
+                .returns(new TypeHint<Tuple3<Long, String, Long>>() { })
+                .writeAsCsv(fileName, WriteMode.OVERWRITE).setParallelism(1);
 
         JobExecutionResult execute = env.execute("Trade Monitor Example");
     }
