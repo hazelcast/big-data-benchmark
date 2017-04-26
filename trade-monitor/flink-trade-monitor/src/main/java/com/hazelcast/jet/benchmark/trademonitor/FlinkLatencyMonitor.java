@@ -26,10 +26,10 @@ import org.apache.flink.streaming.api.TimeCharacteristic;
 import org.apache.flink.streaming.api.datastream.DataStreamSource;
 import org.apache.flink.streaming.api.datastream.SingleOutputStreamOperator;
 import org.apache.flink.streaming.api.environment.StreamExecutionEnvironment;
-import org.apache.flink.streaming.api.functions.AssignerWithPeriodicWatermarks;
+import org.apache.flink.streaming.api.functions.AssignerWithPunctuatedWatermarks;
 import org.apache.flink.streaming.api.functions.sink.RichSinkFunction;
-import org.apache.flink.streaming.api.functions.timestamps.BoundedOutOfOrdernessTimestampExtractor;
 import org.apache.flink.streaming.api.functions.windowing.WindowFunction;
+import org.apache.flink.streaming.api.watermark.Watermark;
 import org.apache.flink.streaming.api.windowing.assigners.SlidingEventTimeWindows;
 import org.apache.flink.streaming.api.windowing.time.Time;
 import org.apache.flink.streaming.api.windowing.windows.TimeWindow;
@@ -39,6 +39,7 @@ import org.apache.flink.streaming.util.serialization.DeserializationSchema;
 import org.apache.flink.util.Collector;
 import org.apache.kafka.common.serialization.LongDeserializer;
 
+import javax.annotation.Nullable;
 import java.io.IOException;
 import java.util.Properties;
 import java.util.UUID;
@@ -52,7 +53,8 @@ public class FlinkLatencyMonitor {
     public static void main(String[] args) throws Exception {
         if (args.length < 3 || args.length > 4) {
             System.err.println("Usage:");
-            System.err.println("  "+FlinkLatencyMonitor.class.getSimpleName()+" <bootstrap.servers> <topic> <slideBy> [<outputFile>]");
+            System.err.println("  "+FlinkLatencyMonitor.class.getSimpleName()
+                    + " <bootstrap.servers> <topic> <slideBy> [<outputFile>]");
             System.exit(1);
         }
         System.setProperty("hazelcast.logging.type", "log4j");
@@ -62,8 +64,7 @@ public class FlinkLatencyMonitor {
         String fileName = args.length > 3 ? args[3] : null;
 
         // set up the execution environment
-        StreamExecutionEnvironment env =
-                StreamExecutionEnvironment.getExecutionEnvironment();
+        StreamExecutionEnvironment env = StreamExecutionEnvironment.getExecutionEnvironment();
         env.setStreamTimeCharacteristic(TimeCharacteristic.EventTime);
 
         DeserializationSchema<Trade> schema = new AbstractDeserializationSchema<Trade>() {
@@ -75,18 +76,32 @@ public class FlinkLatencyMonitor {
             }
         };
 
+        final int lag = 1000;
+
         DataStreamSource<Trade> trades = env.addSource(new FlinkKafkaConsumer010<>(topic,
                 schema, getKafkaProperties(brokerUri)));
-        AssignerWithPeriodicWatermarks<Trade> timestampExtractor
-                = new BoundedOutOfOrdernessTimestampExtractor<Trade>(Time.milliseconds(1000)) {
+
+        AssignerWithPunctuatedWatermarks<Trade> timestampExtractor2 = new AssignerWithPunctuatedWatermarks<Trade>() {
+            long lastWm = Long.MIN_VALUE;
+
+            @Override @Nullable
+            public Watermark checkAndGetNextWatermark(Trade lastElement, long extractedTimestamp) {
+                long newWm = (extractedTimestamp - lag) / slideBy;
+                if (newWm > lastWm) {
+                    lastWm = newWm;
+                    return new Watermark(newWm * slideBy);
+                }
+                return null;
+            }
+
             @Override
-            public long extractTimestamp(Trade element) {
+            public long extractTimestamp(Trade element, long previousElementTimestamp) {
                 return element.getTime();
             }
         };
 
         SingleOutputStreamOperator<Tuple3<Long, String, Long>> finalStream = trades
-                .assignTimestampsAndWatermarks(timestampExtractor)
+                .assignTimestampsAndWatermarks(timestampExtractor2)
                 .keyBy(Trade::getTicker)
                 .window(SlidingEventTimeWindows.of(Time.milliseconds(10000), Time.milliseconds(slideBy)))
                 .fold(new Tuple2<MutableLong, MutableLong>(new MutableLong(), new MutableLong()),
@@ -114,7 +129,6 @@ public class FlinkLatencyMonitor {
                     @Override
                     public void invoke(Tuple3<Long, String, Long> value) throws Exception {
                         long latency = System.currentTimeMillis() - value.f0;
-                        //logger.info("sink1-frame drained=" + drainedCount + " frames, now=" + System.nanoTime() + ", iterationCnt=" + iterationCnt);
 
                         totalSum.addAndGet(latency);
                         totalCount.addAndGet(1);
@@ -136,7 +150,7 @@ public class FlinkLatencyMonitor {
                 long count = totalCount.get();
                 totalSum.set(0);
                 totalCount.set(0);
-                System.out.println("average latency=" + (count != 0 ? sum / count + "ms" : "?") + ", count=" + count);
+                System.out.println("average latency=" + (count != 0 ? (sum / count - lag) + "ms" : "?") + ", count=" + count);
             }
         }).start();
 
