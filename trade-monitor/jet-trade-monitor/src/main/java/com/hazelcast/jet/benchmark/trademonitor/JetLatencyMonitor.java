@@ -32,7 +32,8 @@ public class JetLatencyMonitor {
     public static void main(String[] args) throws Exception {
         if (args.length != 4) {
             System.err.println("Usage:");
-            System.err.println("  "+JetLatencyMonitor.class.getSimpleName()+" <bootstrap.servers> <topic> <slideByMs> <outputFile>");
+            System.err.println("  " + JetLatencyMonitor.class.getSimpleName() +
+                    " <bootstrap.servers> <topic> <slideByMs> <outputFile>");
             System.exit(1);
         }
         System.setProperty("hazelcast.logging.type", "log4j");
@@ -58,8 +59,7 @@ public class JetLatencyMonitor {
                         .throttleByFrame(windowDef)));
         Vertex groupByF = dag.newVertex("groupByF",
                 groupByFrame(Trade::getTicker, Trade::getTime, windowDef, winOpAverageTradePrice));
-        Vertex slidingW = dag.newVertex("slidingW",
-                slidingWindow(windowDef, winOpAverageTradePrice));
+        Vertex slidingW = dag.newVertex("slidingW", slidingWindow(windowDef, winOpAverageTradePrice));
         Vertex mapToLatency = dag.newVertex("mapToLatency",
                 map((Frame frame) -> new Frame<>(frame.getSeq(), 0, System.currentTimeMillis() - frame.getSeq() - lag)));
         Vertex fileSink = dag.newVertex("fileSink", writeFile(outputFile)).localParallelism(1);
