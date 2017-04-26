@@ -73,16 +73,18 @@ public class JetLatencyMonitor {
                 acc -> acc.sum / acc.count
         );
 
+        int lag = 1000;
+
         DAG dag = new DAG();
         Vertex readKafka = dag.newVertex("readKafka", streamKafka(kafkaProps, topic));
         Vertex extractTrade = dag.newVertex("extractTrade", map(entryValue()));
         Vertex insertPunctuation = dag.newVertex("insertPunctuation",
-                insertPunctuation(Trade::getTime, () -> cappingEventSeqLag(1000)
+                insertPunctuation(Trade::getTime, () -> cappingEventSeqLag(lag)
                         .throttleByFrame(windowDef)));
         Vertex groupByF = dag.newVertex("groupByF",
                 WindowingProcessors.groupByFrame(Trade::getTicker, Trade::getTime, windowDef, windowOperation));
         Vertex slidingW = dag.newVertex("slidingW",
-                slidingWindow(windowDef, windowOperation, false));
+                slidingWindow(windowDef, windowOperation));
         Vertex sink1 = dag.newVertex("sink1",
                 () -> new Processor() {
                     public ILogger logger;
@@ -137,7 +139,7 @@ public class JetLatencyMonitor {
             long count = totalCount.get();
             totalSum.set(0);
             totalCount.set(0);
-            System.out.println("average latency=" + (count != 0 ? sum / count + "ms" : "?") + ", count=" + count);
+            System.out.println("average latency=" + (count != 0 ? (sum / count - lag) + "ms" : "?") + ", count=" + count);
         }
     }
 

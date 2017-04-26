@@ -3,11 +3,8 @@ package com.hazelcast.jet.benchmark.trademonitor;
 import com.hazelcast.jet.DAG;
 import com.hazelcast.jet.Jet;
 import com.hazelcast.jet.JetInstance;
-import com.hazelcast.jet.Job;
 import com.hazelcast.jet.JobSubmitter;
 import com.hazelcast.jet.Vertex;
-import com.hazelcast.jet.config.JobConfig;
-import com.hazelcast.jet.impl.util.Util;
 import com.hazelcast.jet.windowing.Frame;
 import com.hazelcast.jet.windowing.WindowDefinition;
 import org.apache.kafka.common.serialization.LongDeserializer;
@@ -52,7 +49,7 @@ public class JetTradeMonitor {
         Vertex groupByF = dag.newVertex("group-by-frame",
                 groupByFrame(Trade::getTicker, Trade::getTime, windowDef, counting()));
         Vertex slidingW = dag.newVertex("sliding-window",
-                slidingWindow(windowDef, counting(), false));
+                slidingWindow(windowDef, counting()));
         Vertex addTimestamp = dag.newVertex("timestamp",
                 map(f -> new TimestampedFrame((Frame) f, System.currentTimeMillis())));
         Vertex sink = dag.newVertex("sink", writeFile(Paths.get(outputPath, "output").toString()));
