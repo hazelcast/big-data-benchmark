@@ -31,6 +31,8 @@ import org.apache.flink.streaming.api.functions.AssignerWithPeriodicWatermarks;
 import org.apache.flink.streaming.api.functions.timestamps.BoundedOutOfOrdernessTimestampExtractor;
 import org.apache.flink.streaming.api.functions.windowing.WindowFunction;
 import org.apache.flink.streaming.api.windowing.assigners.SlidingEventTimeWindows;
+import org.apache.flink.streaming.api.windowing.assigners.TumblingEventTimeWindows;
+import org.apache.flink.streaming.api.windowing.assigners.WindowAssigner;
 import org.apache.flink.streaming.api.windowing.time.Time;
 import org.apache.flink.streaming.api.windowing.windows.TimeWindow;
 import org.apache.flink.streaming.connectors.kafka.FlinkKafkaConsumer010;
@@ -47,6 +49,18 @@ import java.util.UUID;
 public class FlinkTradeMonitor {
 
     public static void main(String[] args) throws Exception {
+        if (args.length != 5) {
+            System.err.println("Usage:");
+            System.err.println("  FlinkTradeMonitor <bootstrap.servers> <topic> <windowSize> <slideBy> <output_path>");
+            System.exit(1);
+        }
+
+        String brokerUri = args[0];
+        String topic = args[1];
+        int windowSize = Integer.parseInt(args[2]);
+        int slide = Integer.parseInt(args[3]);
+        String outputPath = args[4];
+
         // set up the execution environment
         StreamExecutionEnvironment env =
                 StreamExecutionEnvironment.getExecutionEnvironment();
@@ -61,8 +75,8 @@ public class FlinkTradeMonitor {
             }
         };
 
-        DataStreamSource<Trade> trades = env.addSource(new FlinkKafkaConsumer010<>("trades",
-                schema, getKafkaProperties("localhost:9092")));
+        DataStreamSource<Trade> trades = env.addSource(new FlinkKafkaConsumer010<>(topic,
+                schema, getKafkaProperties(brokerUri))).setParallelism(16);
         AssignerWithPeriodicWatermarks<Trade> timestampExtractor
                 = new BoundedOutOfOrdernessTimestampExtractor<Trade>(Time.milliseconds(1)) {
             @Override
@@ -71,10 +85,15 @@ public class FlinkTradeMonitor {
             }
         };
 
+        WindowAssigner window =
+                windowSize == slide ?
+                        TumblingEventTimeWindows.of(Time.milliseconds(windowSize)) :
+                SlidingEventTimeWindows.of(Time.milliseconds(windowSize), Time.milliseconds
+                (slide));
         trades
                 .assignTimestampsAndWatermarks(timestampExtractor)
                 .keyBy((Trade t) -> t.getTicker())
-                .window(SlidingEventTimeWindows.of(Time.milliseconds(1000), Time.milliseconds(10)))
+                .window(window)
                 .fold(0L, new FoldFunction<Trade, Long>() {
                     @Override public Long fold(Long accumulator, Trade value) throws Exception {
                         return accumulator + 1;
@@ -88,21 +107,9 @@ public class FlinkTradeMonitor {
                         out.collect(new Tuple4<>(window.getEnd(), key, count, System.currentTimeMillis()));
                     }
                 })
-                .writeAsCsv("flink-output", WriteMode.OVERWRITE);
-
-        new Thread(() -> {
-            try {
-                while (true) {
-                    Thread.sleep(5000);
-                    System.out.println(OutputParser.minMaxDiff("flink-output"));
-                }
-            } catch (Exception e) {
-                e.printStackTrace();
-            }
-        }).start();
+                .writeAsCsv(outputPath, WriteMode.OVERWRITE);
 
         JobExecutionResult execute = env.execute("Trade Monitor Example");
-
     }
 
     private static Properties getKafkaProperties(String brokerUrl) {

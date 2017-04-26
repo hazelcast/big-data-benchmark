@@ -15,6 +15,7 @@ import org.apache.kafka.common.serialization.LongDeserializer;
 import java.io.Serializable;
 import java.util.Properties;
 import java.util.UUID;
+import java.util.concurrent.TimeUnit;
 
 import static com.hazelcast.jet.DistributedFunctions.entryValue;
 import static com.hazelcast.jet.Edge.between;
@@ -33,7 +34,7 @@ public class JetLatencyMonitor {
         if (args.length != 4) {
             System.err.println("Usage:");
             System.err.println("  " + JetLatencyMonitor.class.getSimpleName() +
-                    " <bootstrap.servers> <topic> <slideByMs> <outputFile>");
+                    " <bootstrap.servers> <topic> <slideByMs> <outputPath>");
             System.exit(1);
         }
         System.setProperty("hazelcast.logging.type", "log4j");
@@ -42,17 +43,18 @@ public class JetLatencyMonitor {
         int slideBy = Integer.parseInt(args[2]);
         String outputFile = args[3];
 
-        JetInstance jetInstance = Jet.newJetInstance();
-        Jet.newJetInstance();
-
         Properties kafkaProps = getKafkaProperties(brokerUri);
-        WindowDefinition windowDef = WindowDefinition.slidingWindowDef(10000, slideBy);
+
+        long windowSize = TimeUnit.SECONDS.toMillis(10);
+
+        WindowDefinition windowDef = WindowDefinition.slidingWindowDef(windowSize, slideBy);
         WindowOperation<Trade, ?, Long> winOpAverageTradePrice = averageLongToLong(Trade::getPrice);
 
-        int lag = 1000;
+        long lag = TimeUnit.SECONDS.toMillis(1);
 
         DAG dag = new DAG();
-        Vertex readKafka = dag.newVertex("readKafka", streamKafka(kafkaProps, topic));
+        Vertex readKafka = dag.newVertex("readKafka", streamKafka(kafkaProps, topic))
+                .localParallelism(8);
         Vertex extractTrade = dag.newVertex("extractTrade", map(entryValue()));
         Vertex insertPunctuation = dag.newVertex("insertPunctuation",
                 insertPunctuation(Trade::getTime, () -> cappingEventSeqLag(lag)
@@ -83,10 +85,10 @@ public class JetLatencyMonitor {
 //        dag.edge(from(extractTrade, 1).to(peek).oneToMany());
 //        dag.edge(from(slidingW, 1).to(peek));
 
-        ClientConfig clientConfig = new ClientConfig();
-        clientConfig.getGroupConfig().setName("jet");
-        clientConfig.getGroupConfig().setPassword("jet-pass");
-        JetInstance client = Jet.newJetClient(clientConfig);
+//        JetInstance jetInstance = Jet.newJetInstance();
+//        Jet.newJetInstance();
+
+        JetInstance client = Jet.newJetClient();
         client.newJob(dag).execute();
     }
 

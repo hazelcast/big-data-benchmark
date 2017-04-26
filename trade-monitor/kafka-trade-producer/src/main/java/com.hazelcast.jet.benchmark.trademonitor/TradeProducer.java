@@ -49,7 +49,6 @@ public class TradeProducer implements AutoCloseable {
         long tradesPerSecond = Long.parseLong(args[3]);
         long numSeconds = Long.parseLong(args[4]);
 
-
         ExecutorService service = Executors.newCachedThreadPool();
 
         AtomicLong totalProduced = new AtomicLong();

@@ -28,21 +28,24 @@ import static com.hazelcast.jet.windowing.WindowingProcessors.slidingWindow;
 public class JetTradeMonitor {
 
     public static void main(String[] args) throws Exception {
-        if (args.length != 3) {
+        if (args.length != 5) {
             System.err.println("Usage:");
-            System.err.println("  JetTradeMonitor <bootstrap.servers> <topic> <output_path>");
+            System.err.println("  JetTradeMonitor <bootstrap.servers> <topic> <window> <slide> <output_path>");
             System.exit(1);
         }
         System.setProperty("hazelcast.logging.type", "log4j");
         String brokerUri = args[0];
         String topic = args[1];
-        String outputPath = args[2];
+        int window = Integer.parseInt(args[2]);
+        int slide = Integer.parseInt(args[3]);
+        String outputPath = args[4];
 
         DAG dag = new DAG();
         Properties kafkaProps = getKafkaProperties(brokerUri);
-        Vertex readKafka = dag.newVertex("read-kafka", streamKafka(kafkaProps, topic));
+        Vertex readKafka = dag.newVertex("read-kafka", streamKafka(kafkaProps, topic))
+                .localParallelism(8);
         Vertex extractTrade = dag.newVertex("extract-event", map(entryValue()));
-        WindowDefinition windowDef = WindowDefinition.slidingWindowDef(1000, 10);
+        WindowDefinition windowDef = WindowDefinition.slidingWindowDef(window, slide);
         Vertex insertPunctuation = dag.newVertex("insert-punctuation",
                 insertPunctuation(Trade::getTime, () -> cappingEventSeqLagAndRetention(1, 100)
                         .throttleByFrame(windowDef)));
@@ -52,7 +55,7 @@ public class JetTradeMonitor {
                 slidingWindow(windowDef, counting()));
         Vertex addTimestamp = dag.newVertex("timestamp",
                 map(f -> new TimestampedFrame((Frame) f, System.currentTimeMillis())));
-        Vertex sink = dag.newVertex("sink", writeFile(Paths.get(outputPath, "output").toString()));
+        Vertex sink = dag.newVertex("sink", writeFile(Paths.get(outputPath).toString()));
 
         dag
                 .edge(between(readKafka, extractTrade).oneToMany())
