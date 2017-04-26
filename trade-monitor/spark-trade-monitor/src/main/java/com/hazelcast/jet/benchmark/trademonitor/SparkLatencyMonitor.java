@@ -28,12 +28,17 @@ import org.apache.spark.streaming.kafka010.KafkaUtils;
 import org.apache.spark.streaming.kafka010.LocationStrategies;
 import scala.Tuple2;
 
+import java.io.BufferedWriter;
+import java.io.IOException;
+import java.nio.file.Files;
+import java.nio.file.Paths;
+import java.nio.file.StandardOpenOption;
 import java.util.Collections;
 import java.util.HashMap;
 import java.util.Map;
 import java.util.UUID;
 
-public class SparkTradeMonitor {
+public class SparkLatencyMonitor {
 
     public static void main(String[] args) throws InterruptedException {
         if (args.length != 4) {
@@ -59,14 +64,24 @@ public class SparkTradeMonitor {
                         ConsumerStrategies.<String, Trade>Subscribe(Collections.singleton(topic), getKafkaProperties(brokerUri)));
         JavaPairDStream<String, Long> paired = stream.mapToPair(record -> new Tuple2<>(record.value().getTicker(), 1L));
         JavaPairDStream<String, Long> reduced = paired.reduceByKeyAndWindow(
-                        (Long a, Long b) -> a + b,
-                        (Long a, Long b) -> a - b,
-                        Durations.seconds(10),
-                        Durations.seconds(1));
-        reduced.foreachRDD((rdd, time) -> rdd.saveAsTextFile(outputFile + time));
+                (Long a, Long b) -> a + b,
+                (Long a, Long b) -> a - b,
+                Durations.seconds(10),
+                Durations.seconds(1));
+        reduced.foreachRDD((rdd, time) -> appendToFile(outputFile,
+                "time=" + time.milliseconds()
+                + ", latency=" + (System.currentTimeMillis() - time.milliseconds())
+                + ", count=" + rdd.count()));
 
         jsc.start();
         jsc.awaitTermination();
+    }
+
+    private static void appendToFile(String fileName, String value) throws IOException {
+        try (BufferedWriter w = Files.newBufferedWriter(Paths.get(fileName), StandardOpenOption.CREATE, StandardOpenOption.APPEND)) {
+            w.write(value);
+            w.newLine();
+        }
     }
 
     private static Map<String, Object> getKafkaProperties(String brokerUrl) {
@@ -75,7 +90,7 @@ public class SparkTradeMonitor {
         props.put("group.id", UUID.randomUUID().toString());
         props.put("key.deserializer", LongDeserializer.class);
         props.put("value.deserializer", TradeDeserializer.class);
-        props.put("auto.offset.reset", "earliest");
+        props.put("auto.offset.reset", "latest");
         return props;
     }
 }
