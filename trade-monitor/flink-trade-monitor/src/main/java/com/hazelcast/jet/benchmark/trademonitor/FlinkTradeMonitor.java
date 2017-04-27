@@ -18,10 +18,6 @@ package com.hazelcast.jet.benchmark.trademonitor;
 
 import org.apache.flink.api.common.JobExecutionResult;
 import org.apache.flink.api.common.functions.FoldFunction;
-import org.apache.flink.api.common.functions.ReduceFunction;
-import org.apache.flink.api.common.typeinfo.TypeHint;
-import org.apache.flink.api.java.tuple.Tuple;
-import org.apache.flink.api.java.tuple.Tuple2;
 import org.apache.flink.api.java.tuple.Tuple4;
 import org.apache.flink.core.fs.FileSystem.WriteMode;
 import org.apache.flink.streaming.api.TimeCharacteristic;
@@ -76,7 +72,7 @@ public class FlinkTradeMonitor {
         };
 
         DataStreamSource<Trade> trades = env.addSource(new FlinkKafkaConsumer010<>(topic,
-                schema, getKafkaProperties(brokerUri))).setParallelism(16);
+                schema, getKafkaProperties(brokerUri)));
         AssignerWithPeriodicWatermarks<Trade> timestampExtractor
                 = new BoundedOutOfOrdernessTimestampExtractor<Trade>(Time.milliseconds(1)) {
             @Override
@@ -85,11 +81,10 @@ public class FlinkTradeMonitor {
             }
         };
 
-        WindowAssigner window =
-                windowSize == slide ?
-                        TumblingEventTimeWindows.of(Time.milliseconds(windowSize)) :
-                SlidingEventTimeWindows.of(Time.milliseconds(windowSize), Time.milliseconds
-                (slide));
+        WindowAssigner window = windowSize == slide ?
+                TumblingEventTimeWindows.of(Time.milliseconds(windowSize)) :
+                SlidingEventTimeWindows.of(Time.milliseconds(windowSize), Time.milliseconds(slide));
+
         trades
                 .assignTimestampsAndWatermarks(timestampExtractor)
                 .keyBy((Trade t) -> t.getTicker())

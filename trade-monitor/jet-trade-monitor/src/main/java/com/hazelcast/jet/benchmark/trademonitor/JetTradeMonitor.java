@@ -42,8 +42,7 @@ public class JetTradeMonitor {
 
         DAG dag = new DAG();
         Properties kafkaProps = getKafkaProperties(brokerUri);
-        Vertex readKafka = dag.newVertex("read-kafka", streamKafka(kafkaProps, topic))
-                .localParallelism(8);
+        Vertex readKafka = dag.newVertex("read-kafka", streamKafka(kafkaProps, topic));
         Vertex extractTrade = dag.newVertex("extract-event", map(entryValue()));
         WindowDefinition windowDef = WindowDefinition.slidingWindowDef(window, slide);
         Vertex insertPunctuation = dag.newVertex("insert-punctuation",
