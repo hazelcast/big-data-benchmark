@@ -19,6 +19,7 @@ package com.hazelcast.jet.benchmark.trademonitor;
 import org.apache.flink.api.common.JobExecutionResult;
 import org.apache.flink.api.common.functions.FoldFunction;
 import org.apache.flink.api.java.tuple.Tuple4;
+import org.apache.flink.api.java.tuple.Tuple5;
 import org.apache.flink.core.fs.FileSystem.WriteMode;
 import org.apache.flink.streaming.api.TimeCharacteristic;
 import org.apache.flink.streaming.api.datastream.DataStreamSource;
@@ -41,21 +42,25 @@ import java.io.IOException;
 import java.util.Properties;
 import java.util.UUID;
 
+import static java.lang.System.currentTimeMillis;
+
 
 public class FlinkTradeMonitor {
 
     public static void main(String[] args) throws Exception {
-        if (args.length != 5) {
+        if (args.length != 7) {
             System.err.println("Usage:");
-            System.err.println("  FlinkTradeMonitor <bootstrap.servers> <topic> <windowSize> <slideBy> <output_path>");
+            System.err.println("  " + FlinkTradeMonitor.class.getSimpleName() +
+                    " <bootstrap.servers> <topic> <offset-reset> <lag> <windowSizeMs> <slideByMs> <outputPath>");
             System.exit(1);
         }
-
         String brokerUri = args[0];
         String topic = args[1];
-        int windowSize = Integer.parseInt(args[2]);
-        int slide = Integer.parseInt(args[3]);
-        String outputPath = args[4];
+        String offsetReset = args[2];
+        int lagMs = Integer.parseInt(args[3]);
+        int windowSize = Integer.parseInt(args[4]);
+        int slideBy = Integer.parseInt(args[5]);
+        String outputPath = args[6];
 
         // set up the execution environment
         StreamExecutionEnvironment env =
@@ -72,18 +77,18 @@ public class FlinkTradeMonitor {
         };
 
         DataStreamSource<Trade> trades = env.addSource(new FlinkKafkaConsumer010<>(topic,
-                schema, getKafkaProperties(brokerUri)));
+                schema, getKafkaProperties(brokerUri, offsetReset)));
         AssignerWithPeriodicWatermarks<Trade> timestampExtractor
-                = new BoundedOutOfOrdernessTimestampExtractor<Trade>(Time.milliseconds(1)) {
+                = new BoundedOutOfOrdernessTimestampExtractor<Trade>(Time.milliseconds(lagMs)) {
             @Override
             public long extractTimestamp(Trade element) {
                 return element.getTime();
             }
         };
 
-        WindowAssigner window = windowSize == slide ?
+        WindowAssigner window = windowSize == slideBy ?
                 TumblingEventTimeWindows.of(Time.milliseconds(windowSize)) :
-                SlidingEventTimeWindows.of(Time.milliseconds(windowSize), Time.milliseconds(slide));
+                SlidingEventTimeWindows.of(Time.milliseconds(windowSize), Time.milliseconds(slideBy));
 
         trades
                 .assignTimestampsAndWatermarks(timestampExtractor)
@@ -93,27 +98,29 @@ public class FlinkTradeMonitor {
                     @Override public Long fold(Long accumulator, Trade value) throws Exception {
                         return accumulator + 1;
                     }
-                }, new WindowFunction<Long, Tuple4<Long, String, Long, Long>, String, TimeWindow>() {
+                }, new WindowFunction<Long, Tuple5<Long, String, Long, Long, Long>, String, TimeWindow>() {
                     @Override
                     public void apply(String key, TimeWindow window,
                                       Iterable<Long> input,
-                                      Collector<Tuple4<Long, String, Long, Long>> out) throws Exception {
-                        Long count = input.iterator().next();
-                        out.collect(new Tuple4<>(window.getEnd(), key, count, System.currentTimeMillis()));
+                                      Collector<Tuple5<Long, String, Long, Long, Long>> out) throws Exception {
+                        long timeMs = currentTimeMillis();
+                        long count = input.iterator().next();
+                        long latencyMs = timeMs - window.getEnd();
+                        out.collect(new Tuple5<>(window.getEnd(), key, count, timeMs, latencyMs));
                     }
                 })
                 .writeAsCsv(outputPath, WriteMode.OVERWRITE);
 
-        JobExecutionResult execute = env.execute("Trade Monitor Example");
+        env.execute("Trade Monitor Example");
     }
 
-    private static Properties getKafkaProperties(String brokerUrl) {
+    private static Properties getKafkaProperties(String brokerUrl, String offsetReset) {
         Properties props = new Properties();
         props.setProperty("bootstrap.servers", brokerUrl);
         props.setProperty("group.id", UUID.randomUUID().toString());
         props.setProperty("key.deserializer", LongDeserializer.class.getName());
         props.setProperty("value.deserializer", TradeDeserializer.class.getName());
-        props.setProperty("auto.offset.reset", "earliest");
+        props.setProperty("auto.offset.reset", offsetReset);
         props.setProperty("max.poll.records", "32768");
         return props;
     }

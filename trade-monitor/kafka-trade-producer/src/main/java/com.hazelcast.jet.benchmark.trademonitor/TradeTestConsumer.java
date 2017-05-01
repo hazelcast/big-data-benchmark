@@ -21,7 +21,6 @@ public class TradeTestConsumer {
         props.setProperty("key.deserializer", LongDeserializer.class.getName());
         props.setProperty("value.deserializer", TradeDeserializer.class.getName());
         props.setProperty("auto.offset.reset", "earliest");
-        props.setProperty("max.partition.fetch.bytes", "1024");
         KafkaConsumer<Long, Trade> consumer = new KafkaConsumer<>(props);
         List<String> topics = Arrays.asList(args[1]);
         consumer.subscribe(topics);
