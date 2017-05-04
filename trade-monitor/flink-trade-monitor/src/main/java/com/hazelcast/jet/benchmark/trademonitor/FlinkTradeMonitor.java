@@ -16,9 +16,7 @@
 
 package com.hazelcast.jet.benchmark.trademonitor;
 
-import org.apache.flink.api.common.JobExecutionResult;
 import org.apache.flink.api.common.functions.FoldFunction;
-import org.apache.flink.api.java.tuple.Tuple4;
 import org.apache.flink.api.java.tuple.Tuple5;
 import org.apache.flink.core.fs.FileSystem.WriteMode;
 import org.apache.flink.streaming.api.TimeCharacteristic;
@@ -51,7 +49,7 @@ public class FlinkTradeMonitor {
         if (args.length != 7) {
             System.err.println("Usage:");
             System.err.println("  " + FlinkTradeMonitor.class.getSimpleName() +
-                    " <bootstrap.servers> <topic> <offset-reset> <lag> <windowSizeMs> <slideByMs> <outputPath>");
+                    " <bootstrap.servers> <topic> <offset-reset> <maxLagMs> <windowSizeMs> <slideByMs> <outputPath>");
             System.exit(1);
         }
         String brokerUri = args[0];
@@ -95,14 +93,13 @@ public class FlinkTradeMonitor {
                 .keyBy((Trade t) -> t.getTicker())
                 .window(window)
                 .fold(0L, new FoldFunction<Trade, Long>() {
-                    @Override public Long fold(Long accumulator, Trade value) throws Exception {
+                    @Override
+                    public Long fold(Long accumulator, Trade value) throws Exception {
                         return accumulator + 1;
                     }
                 }, new WindowFunction<Long, Tuple5<Long, String, Long, Long, Long>, String, TimeWindow>() {
                     @Override
-                    public void apply(String key, TimeWindow window,
-                                      Iterable<Long> input,
-                                      Collector<Tuple5<Long, String, Long, Long, Long>> out) throws Exception {
+                    public void apply(String key, TimeWindow window, Iterable<Long> input, Collector<Tuple5<Long, String, Long, Long, Long>> out) throws Exception {
                         long timeMs = currentTimeMillis();
                         long count = input.iterator().next();
                         long latencyMs = timeMs - window.getEnd();

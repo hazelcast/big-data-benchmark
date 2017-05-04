@@ -34,7 +34,7 @@ public class JetTradeMonitor {
         if (args.length != 7) {
             System.err.println("Usage:");
             System.err.println("  " + JetTradeMonitor.class.getSimpleName() +
-                    " <bootstrap.servers> <topic> <offset-reset> <lag> <windowSizeMs> <slideByMs> <outputPath>");
+                    " <bootstrap.servers> <topic> <offset-reset> <maxLagMs> <windowSizeMs> <slideByMs> <outputPath>");
             System.exit(1);
         }
         System.setProperty("hazelcast.logging.type", "log4j");
@@ -52,38 +52,33 @@ public class JetTradeMonitor {
         WindowOperation<Object, MutableLong, Long> counting = WindowOperations.counting();
 
         DAG dag = new DAG();
-        Vertex readKafka = dag.newVertex("readKafka", streamKafka(kafkaProps, topic));
-        Vertex extractTrade = dag.newVertex("extractTrade", map(entryValue()));
-        Vertex insertPunctuation = dag.newVertex("insertPunctuation",
+        Vertex readKafka = dag.newVertex("read-kafka", streamKafka(kafkaProps, topic));
+        Vertex extractTrade = dag.newVertex("extract-trade", map(entryValue()));
+        Vertex insertPunctuation = dag.newVertex("insert-punctuation",
                 insertPunctuation(Trade::getTime, () -> cappingEventSeqLag(lagMs).throttleByFrame(windowDef)));
-        Vertex groupByF = dag.newVertex("groupByF",
+        Vertex groupByF = dag.newVertex("group-by-frame",
                 groupByFrame(Trade::getTicker, Trade::getTime, windowDef, counting));
-        Vertex slidingW = dag.newVertex("slidingW", slidingWindow(windowDef, counting));
-        Vertex mapToLatency = dag.newVertex("formatFrame",
+        Vertex slidingW = dag.newVertex("sliding-window", slidingWindow(windowDef, counting));
+        Vertex formatOutput = dag.newVertex("format-output",
                 map((Frame frame) -> {
                     long timeMs = currentTimeMillis();
                     long latencyMs = timeMs - frame.getSeq();
-                    return String.format("%d,%s,%s,%d, %d", frame.getSeq(), frame.getKey(), frame.getValue(),
-                            timeMs, latencyMs, latencyMs - lagMs);
+                    return String.format("%d,%s,%s,%d,%d", frame.getSeq(), frame.getKey(), frame.getValue(),
+                            timeMs, latencyMs);
                 }));
-        Vertex fileSink = dag.newVertex("fileSink", writeFile(outputPath));
+        Vertex fileSink = dag.newVertex("write-file", writeFile(outputPath));
 
         dag
-                .edge(between(readKafka, extractTrade)
-                        .oneToMany())
-                .edge(between(extractTrade, insertPunctuation)
-                        .oneToMany())
-                .edge(between(insertPunctuation, groupByF)
-                        .partitioned(Trade::getTicker, HASH_CODE))
-                .edge(between(groupByF, slidingW)
-                        .partitioned(Frame<Object, Object>::getKey)
-                        .distributed())
-                .edge(between(slidingW, mapToLatency)
-                        .oneToMany())
-                .edge(between(mapToLatency, fileSink));
+                .edge(between(readKafka, extractTrade).oneToMany())
+                .edge(between(extractTrade, insertPunctuation).oneToMany())
+                .edge(between(insertPunctuation, groupByF).partitioned(Trade::getTicker, HASH_CODE))
+                .edge(between(groupByF, slidingW).partitioned(Frame<Object, Object>::getKey)
+                                                 .distributed())
+                .edge(between(slidingW, formatOutput).oneToMany())
+                .edge(between(formatOutput, fileSink));
 
-        JetInstance jetInstance = Jet.newJetInstance();
-        jetInstance.newJob(dag).execute().get();
+//        JetInstance jetInstance = Jet.newJetInstance();
+//        jetInstance.newJob(dag).execute().get();
 
         JetInstance client = Jet.newJetClient();
         JobSubmitter.newJob(client, dag).execute().get();
