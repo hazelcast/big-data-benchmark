@@ -1,31 +1,31 @@
 package com.hazelcast.jet.benchmark.trademonitor;
 
-import com.hazelcast.jet.Accumulators.MutableLong;
 import com.hazelcast.jet.DAG;
-import com.hazelcast.jet.Jet;
 import com.hazelcast.jet.JetInstance;
-import com.hazelcast.jet.JobSubmitter;
 import com.hazelcast.jet.Vertex;
-import com.hazelcast.jet.windowing.Frame;
+import com.hazelcast.jet.accumulator.LongAccumulator;
+import com.hazelcast.jet.server.JetBootstrap;
+import com.hazelcast.jet.windowing.PunctuationPolicies;
+import com.hazelcast.jet.windowing.TimestampedEntry;
 import com.hazelcast.jet.windowing.WindowDefinition;
 import com.hazelcast.jet.windowing.WindowOperation;
 import com.hazelcast.jet.windowing.WindowOperations;
+import com.hazelcast.jet.windowing.WindowingProcessors;
 import org.apache.kafka.common.serialization.LongDeserializer;
 
 import java.util.Properties;
 import java.util.UUID;
 
+import static com.hazelcast.jet.DistributedFunctions.entryKey;
 import static com.hazelcast.jet.DistributedFunctions.entryValue;
 import static com.hazelcast.jet.Edge.between;
 import static com.hazelcast.jet.Partitioner.HASH_CODE;
 import static com.hazelcast.jet.Processors.map;
 import static com.hazelcast.jet.Processors.writeFile;
 import static com.hazelcast.jet.connector.kafka.StreamKafkaP.streamKafka;
-import static com.hazelcast.jet.windowing.PunctuationPolicies.cappingEventSeqLag;
 import static com.hazelcast.jet.windowing.WindowDefinition.slidingWindowDef;
-import static com.hazelcast.jet.windowing.WindowingProcessors.groupByFrame;
 import static com.hazelcast.jet.windowing.WindowingProcessors.insertPunctuation;
-import static com.hazelcast.jet.windowing.WindowingProcessors.slidingWindow;
+import static com.hazelcast.jet.windowing.WindowingProcessors.slidingWindowStage1;
 import static java.lang.System.currentTimeMillis;
 
 public class JetTradeMonitor {
@@ -49,21 +49,21 @@ public class JetTradeMonitor {
         Properties kafkaProps = getKafkaProperties(brokerUri, offsetReset);
 
         WindowDefinition windowDef = slidingWindowDef(windowSize, slideBy);
-        WindowOperation<Object, MutableLong, Long> counting = WindowOperations.counting();
+        WindowOperation<Object, LongAccumulator, Long> counting = WindowOperations.counting();
 
         DAG dag = new DAG();
         Vertex readKafka = dag.newVertex("read-kafka", streamKafka(kafkaProps, topic));
         Vertex extractTrade = dag.newVertex("extract-trade", map(entryValue()));
         Vertex insertPunctuation = dag.newVertex("insert-punctuation",
-                insertPunctuation(Trade::getTime, () -> cappingEventSeqLag(lagMs).throttleByFrame(windowDef)));
+                insertPunctuation(Trade::getTime, () -> PunctuationPolicies.withFixedLag(lagMs).throttleByFrame(windowDef)));
         Vertex groupByF = dag.newVertex("group-by-frame",
-                groupByFrame(Trade::getTicker, Trade::getTime, windowDef, counting));
-        Vertex slidingW = dag.newVertex("sliding-window", slidingWindow(windowDef, counting));
+                slidingWindowStage1(Trade::getTicker, Trade::getTime, windowDef, counting));
+        Vertex slidingW = dag.newVertex("sliding-window", WindowingProcessors.slidingWindowStage2(windowDef, counting));
         Vertex formatOutput = dag.newVertex("format-output",
-                map((Frame frame) -> {
+                map((TimestampedEntry entry) -> {
                     long timeMs = currentTimeMillis();
-                    long latencyMs = timeMs - frame.getSeq();
-                    return String.format("%d,%s,%s,%d,%d", frame.getSeq(), frame.getKey(), frame.getValue(),
+                    long latencyMs = timeMs - entry.getTimestamp();
+                    return String.format("%d,%s,%s,%d,%d", entry.getTimestamp(), entry.getKey(), entry.getValue(),
                             timeMs, latencyMs);
                 }));
         Vertex fileSink = dag.newVertex("write-file", writeFile(outputPath));
@@ -72,16 +72,17 @@ public class JetTradeMonitor {
                 .edge(between(readKafka, extractTrade).oneToMany())
                 .edge(between(extractTrade, insertPunctuation).oneToMany())
                 .edge(between(insertPunctuation, groupByF).partitioned(Trade::getTicker, HASH_CODE))
-                .edge(between(groupByF, slidingW).partitioned(Frame<Object, Object>::getKey)
+                .edge(between(groupByF, slidingW).partitioned(entryKey())
                                                  .distributed())
                 .edge(between(slidingW, formatOutput).oneToMany())
                 .edge(between(formatOutput, fileSink));
 
-//        JetInstance jetInstance = Jet.newJetInstance();
-//        jetInstance.newJob(dag).execute().get();
 
-        JetInstance client = Jet.newJetClient();
-        JobSubmitter.newJob(client, dag).execute().get();
+//        Jet.newJetInstance();
+
+        JetInstance jet = JetBootstrap.getInstance();
+        System.out.println("Executing job..");
+        jet.newJob(dag).execute().get();
     }
 
     private static Properties getKafkaProperties(String brokerUrl, String offsetReset) {

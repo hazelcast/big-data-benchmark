@@ -38,6 +38,8 @@
                     <artifactSet>
                         <excludes>
                             <exclude>com.hazelcast.jet:hazelcast-jet</exclude>
+                            <exclude>com.hazelcast:hazelcast</exclude>
+                            <exclude>com.hazelcast:hazelcast-client</exclude>
                         </excludes>
                     </artifactSet>
                 </configuration>
@@ -46,11 +48,6 @@
     </build>
 
     <dependencies>
-        <dependency>
-            <groupId>com.hazelcast.jet.benchmark</groupId>
-            <artifactId>jet-submit</artifactId>
-            <version>${project.version}</version>
-        </dependency>
         <dependency>
             <groupId>com.hazelcast.jet</groupId>
             <artifactId>hazelcast-jet-kafka</artifactId>
