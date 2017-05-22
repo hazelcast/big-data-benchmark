@@ -16,13 +16,13 @@ import org.apache.kafka.common.serialization.LongDeserializer;
 import java.util.Properties;
 import java.util.UUID;
 
-import static com.hazelcast.jet.DistributedFunctions.entryKey;
-import static com.hazelcast.jet.DistributedFunctions.entryValue;
 import static com.hazelcast.jet.Edge.between;
 import static com.hazelcast.jet.Partitioner.HASH_CODE;
 import static com.hazelcast.jet.Processors.map;
 import static com.hazelcast.jet.Processors.writeFile;
 import static com.hazelcast.jet.connector.kafka.StreamKafkaP.streamKafka;
+import static com.hazelcast.jet.function.DistributedFunctions.entryKey;
+import static com.hazelcast.jet.function.DistributedFunctions.entryValue;
 import static com.hazelcast.jet.windowing.WindowDefinition.slidingWindowDef;
 import static com.hazelcast.jet.windowing.WindowingProcessors.insertPunctuation;
 import static com.hazelcast.jet.windowing.WindowingProcessors.slidingWindowStage1;
