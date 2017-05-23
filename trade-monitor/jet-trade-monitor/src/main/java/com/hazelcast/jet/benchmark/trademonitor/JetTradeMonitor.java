@@ -1,16 +1,16 @@
 package com.hazelcast.jet.benchmark.trademonitor;
 
+import com.hazelcast.jet.AggregateOperation;
+import com.hazelcast.jet.AggregateOperations;
 import com.hazelcast.jet.DAG;
 import com.hazelcast.jet.JetInstance;
+import com.hazelcast.jet.PunctuationPolicies;
+import com.hazelcast.jet.TimestampedEntry;
 import com.hazelcast.jet.Vertex;
+import com.hazelcast.jet.WindowDefinition;
+import com.hazelcast.jet.WindowingProcessors;
 import com.hazelcast.jet.accumulator.LongAccumulator;
 import com.hazelcast.jet.server.JetBootstrap;
-import com.hazelcast.jet.windowing.PunctuationPolicies;
-import com.hazelcast.jet.windowing.TimestampedEntry;
-import com.hazelcast.jet.windowing.WindowDefinition;
-import com.hazelcast.jet.windowing.WindowOperation;
-import com.hazelcast.jet.windowing.WindowOperations;
-import com.hazelcast.jet.windowing.WindowingProcessors;
 import org.apache.kafka.common.serialization.LongDeserializer;
 
 import java.util.Properties;
@@ -20,12 +20,12 @@ import static com.hazelcast.jet.Edge.between;
 import static com.hazelcast.jet.Partitioner.HASH_CODE;
 import static com.hazelcast.jet.Processors.map;
 import static com.hazelcast.jet.Processors.writeFile;
+import static com.hazelcast.jet.WindowDefinition.slidingWindowDef;
+import static com.hazelcast.jet.WindowingProcessors.insertPunctuation;
+import static com.hazelcast.jet.WindowingProcessors.slidingWindowStage1;
 import static com.hazelcast.jet.connector.kafka.StreamKafkaP.streamKafka;
 import static com.hazelcast.jet.function.DistributedFunctions.entryKey;
 import static com.hazelcast.jet.function.DistributedFunctions.entryValue;
-import static com.hazelcast.jet.windowing.WindowDefinition.slidingWindowDef;
-import static com.hazelcast.jet.windowing.WindowingProcessors.insertPunctuation;
-import static com.hazelcast.jet.windowing.WindowingProcessors.slidingWindowStage1;
 import static java.lang.System.currentTimeMillis;
 
 public class JetTradeMonitor {
@@ -49,7 +49,7 @@ public class JetTradeMonitor {
         Properties kafkaProps = getKafkaProperties(brokerUri, offsetReset);
 
         WindowDefinition windowDef = slidingWindowDef(windowSize, slideBy);
-        WindowOperation<Object, LongAccumulator, Long> counting = WindowOperations.counting();
+        AggregateOperation<Object, LongAccumulator, Long> counting = AggregateOperations.counting();
 
         DAG dag = new DAG();
         Vertex readKafka = dag.newVertex("read-kafka", streamKafka(kafkaProps, topic));
