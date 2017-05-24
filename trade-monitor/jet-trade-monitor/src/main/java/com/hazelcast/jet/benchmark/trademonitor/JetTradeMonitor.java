@@ -5,10 +5,10 @@ import com.hazelcast.jet.AggregateOperations;
 import com.hazelcast.jet.DAG;
 import com.hazelcast.jet.JetInstance;
 import com.hazelcast.jet.PunctuationPolicies;
+import com.hazelcast.jet.TimestampKind;
 import com.hazelcast.jet.TimestampedEntry;
 import com.hazelcast.jet.Vertex;
 import com.hazelcast.jet.WindowDefinition;
-import com.hazelcast.jet.WindowingProcessors;
 import com.hazelcast.jet.accumulator.LongAccumulator;
 import com.hazelcast.jet.server.JetBootstrap;
 import org.apache.kafka.common.serialization.LongDeserializer;
@@ -21,8 +21,9 @@ import static com.hazelcast.jet.Partitioner.HASH_CODE;
 import static com.hazelcast.jet.Processors.map;
 import static com.hazelcast.jet.Processors.writeFile;
 import static com.hazelcast.jet.WindowDefinition.slidingWindowDef;
+import static com.hazelcast.jet.WindowingProcessors.combineToSlidingWindow;
+import static com.hazelcast.jet.WindowingProcessors.groupByFrameAndAccumulate;
 import static com.hazelcast.jet.WindowingProcessors.insertPunctuation;
-import static com.hazelcast.jet.WindowingProcessors.slidingWindowStage1;
 import static com.hazelcast.jet.connector.kafka.StreamKafkaP.streamKafka;
 import static com.hazelcast.jet.function.DistributedFunctions.entryKey;
 import static com.hazelcast.jet.function.DistributedFunctions.entryValue;
@@ -57,8 +58,8 @@ public class JetTradeMonitor {
         Vertex insertPunctuation = dag.newVertex("insert-punctuation",
                 insertPunctuation(Trade::getTime, () -> PunctuationPolicies.withFixedLag(lagMs).throttleByFrame(windowDef)));
         Vertex groupByF = dag.newVertex("group-by-frame",
-                slidingWindowStage1(Trade::getTicker, Trade::getTime, windowDef, counting));
-        Vertex slidingW = dag.newVertex("sliding-window", WindowingProcessors.slidingWindowStage2(windowDef, counting));
+                groupByFrameAndAccumulate(Trade::getTicker, Trade::getTime, TimestampKind.EVENT, windowDef, counting));
+        Vertex slidingW = dag.newVertex("sliding-window", combineToSlidingWindow(windowDef, counting));
         Vertex formatOutput = dag.newVertex("format-output",
                 map((TimestampedEntry entry) -> {
                     long timeMs = currentTimeMillis();
