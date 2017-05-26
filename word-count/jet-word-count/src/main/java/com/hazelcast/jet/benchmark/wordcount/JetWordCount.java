@@ -14,8 +14,10 @@ import org.apache.hadoop.mapred.TextOutputFormat;
 import java.util.Map.Entry;
 import java.util.StringTokenizer;
 
+import static com.hazelcast.jet.AggregateOperations.counting;
 import static com.hazelcast.jet.Edge.between;
 import static com.hazelcast.jet.Partitioner.HASH_CODE;
+import static com.hazelcast.jet.Processors.combineAndFinish;
 import static com.hazelcast.jet.Processors.flatMap;
 import static com.hazelcast.jet.Processors.groupAndAccumulate;
 import static com.hazelcast.jet.connector.hadoop.ReadHdfsP.readHdfs;
@@ -49,24 +51,19 @@ public class JetWordCount {
         );
 
         // word -> (word, count)
-        Vertex accumulator = dag.newVertex("accumulator",
-                groupAndAccumulate(() -> 0L, (count, x) -> count + 1)
-        );
+        Vertex accumulate = dag.newVertex("accumulate", groupAndAccumulate(wholeItem(), counting()));
 
         // (word, count) -> (word, count)
-        Vertex combiner = dag.newVertex("combiner",
-                groupAndAccumulate(entryKey(), () -> 0L,
-                        (Long count, Entry<String, Long> wordAndCount) -> count + wordAndCount.getValue())
-        );
+        Vertex combine = dag.newVertex("combine", combineAndFinish(counting()));
         Vertex consumer = dag.newVertex("writer", writeHdfs(conf)).localParallelism(1);
 
         dag.edge(Edge.between(producer, tokenizer))
-           .edge(between(tokenizer, accumulator)
+           .edge(between(tokenizer, accumulate)
                    .partitioned(wholeItem(), HASH_CODE))
-           .edge(between(accumulator, combiner)
+           .edge(between(accumulate, combine)
                    .distributed()
                    .partitioned(entryKey()))
-           .edge(Edge.between(combiner, consumer));
+           .edge(Edge.between(combine, consumer));
 
         JobConfig config = new JobConfig();
         config.addClass(JetWordCount.class);
