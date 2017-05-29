@@ -11,19 +11,18 @@ import org.apache.hadoop.mapred.JobConf;
 import org.apache.hadoop.mapred.TextInputFormat;
 import org.apache.hadoop.mapred.TextOutputFormat;
 
-import java.util.Map.Entry;
 import java.util.StringTokenizer;
 
 import static com.hazelcast.jet.AggregateOperations.counting;
 import static com.hazelcast.jet.Edge.between;
 import static com.hazelcast.jet.Partitioner.HASH_CODE;
-import static com.hazelcast.jet.Processors.combineAndFinish;
-import static com.hazelcast.jet.Processors.flatMap;
-import static com.hazelcast.jet.Processors.groupAndAccumulate;
 import static com.hazelcast.jet.connector.hadoop.ReadHdfsP.readHdfs;
 import static com.hazelcast.jet.connector.hadoop.WriteHdfsP.writeHdfs;
 import static com.hazelcast.jet.function.DistributedFunctions.entryKey;
 import static com.hazelcast.jet.function.DistributedFunctions.wholeItem;
+import static com.hazelcast.jet.processor.Processors.accumulateByKey;
+import static com.hazelcast.jet.processor.Processors.combineByKey;
+import static com.hazelcast.jet.processor.Processors.flatMap;
 
 public class JetWordCount {
 
@@ -51,10 +50,10 @@ public class JetWordCount {
         );
 
         // word -> (word, count)
-        Vertex accumulate = dag.newVertex("accumulate", groupAndAccumulate(wholeItem(), counting()));
+        Vertex accumulate = dag.newVertex("accumulate", accumulateByKey(wholeItem(), counting()));
 
         // (word, count) -> (word, count)
-        Vertex combine = dag.newVertex("combine", combineAndFinish(counting()));
+        Vertex combine = dag.newVertex("combine", combineByKey(counting()));
         Vertex consumer = dag.newVertex("writer", writeHdfs(conf)).localParallelism(1);
 
         dag.edge(Edge.between(producer, tokenizer))
