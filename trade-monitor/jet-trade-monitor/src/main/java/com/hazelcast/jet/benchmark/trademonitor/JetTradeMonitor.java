@@ -57,7 +57,7 @@ public class JetTradeMonitor {
         Vertex extractTrade = dag.newVertex("extract-trade", map(entryValue()));
         Vertex insertPunctuation = dag.newVertex("insert-punctuation",
                 insertPunctuation(Trade::getTime, () -> PunctuationPolicies.withFixedLag(lagMs).throttleByFrame(windowDef)));
-        Vertex groupByF = dag.newVertex("group-by-frame",
+        Vertex accumulateByF = dag.newVertex("accumulate-by-frame",
                 accumulateByFrame(Trade::getTicker, Trade::getTime, TimestampKind.EVENT, windowDef, counting));
         Vertex slidingW = dag.newVertex("sliding-window", combineToSlidingWindow(windowDef, counting));
         Vertex formatOutput = dag.newVertex("format-output",
@@ -72,8 +72,8 @@ public class JetTradeMonitor {
         dag
                 .edge(between(readKafka, extractTrade).oneToMany())
                 .edge(between(extractTrade, insertPunctuation).oneToMany())
-                .edge(between(insertPunctuation, groupByF).partitioned(Trade::getTicker, HASH_CODE))
-                .edge(between(groupByF, slidingW).partitioned(entryKey())
+                .edge(between(insertPunctuation, accumulateByF).partitioned(Trade::getTicker, HASH_CODE))
+                .edge(between(accumulateByF, slidingW).partitioned(entryKey())
                                                  .distributed())
                 .edge(between(slidingW, formatOutput).oneToMany())
                 .edge(between(formatOutput, fileSink));
