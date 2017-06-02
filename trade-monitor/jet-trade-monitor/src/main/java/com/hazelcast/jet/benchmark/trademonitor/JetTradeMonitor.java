@@ -91,8 +91,11 @@ public class JetTradeMonitor {
 
         System.out.println("Cancelling job...");
         execute.cancel(true);
-        execute.get();
-        jet.shutdown();
+        try {
+            execute.get();
+        } finally {
+            jet.shutdown();
+        }
     }
 
     private static Properties getKafkaProperties(String brokerUrl, String offsetReset) {
