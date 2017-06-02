@@ -15,4 +15,3 @@ reports/
 atlassian-ide-plugin.xml
 .attach_pid*
 dependency-reduced-pom.xml
-output*

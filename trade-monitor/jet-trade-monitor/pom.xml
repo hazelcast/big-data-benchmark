@@ -1,0 +1,66 @@
+<project xmlns="http://maven.apache.org/POM/4.0.0" xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"
+         xsi:schemaLocation="http://maven.apache.org/POM/4.0.0 http://maven.apache.org/xsd/maven-4.0.0.xsd">
+    <modelVersion>4.0.0</modelVersion>
+    <artifactId>jet-trade-monitor</artifactId>
+    <packaging>jar</packaging>
+
+    <parent>
+        <groupId>com.hazelcast.jet.benchmark</groupId>
+        <artifactId>trade-monitor</artifactId>
+        <version>0.1-SNAPSHOT</version>
+    </parent>
+
+    <build>
+        <plugins>
+            <plugin>
+                <groupId>org.apache.maven.plugins</groupId>
+                <artifactId>maven-jar-plugin</artifactId>
+                <configuration>
+                    <archive>
+                        <manifest>
+                            <mainClass>com.hazelcast.jet.benchmark.trademonitor.JetTradeMonitor</mainClass>
+                        </manifest>
+                    </archive>
+                </configuration>
+            </plugin>
+            <plugin>
+                <groupId>org.apache.maven.plugins</groupId>
+                <artifactId>maven-shade-plugin</artifactId>
+                <executions>
+                    <execution>
+                        <phase>package</phase>
+                        <goals>
+                            <goal>shade</goal>
+                        </goals>
+                    </execution>
+                </executions>
+                <configuration>
+                    <artifactSet>
+                        <excludes>
+                            <exclude>com.hazelcast.jet:hazelcast-jet</exclude>
+                            <exclude>com.hazelcast:hazelcast</exclude>
+                            <exclude>com.hazelcast:hazelcast-client</exclude>
+                        </excludes>
+                    </artifactSet>
+                </configuration>
+            </plugin>
+        </plugins>
+    </build>
+
+    <dependencies>
+        <dependency>
+            <groupId>com.hazelcast.jet</groupId>
+            <artifactId>hazelcast-jet-kafka</artifactId>
+        </dependency>
+        <dependency>
+            <groupId>com.hazelcast.jet.benchmark</groupId>
+            <artifactId>kafka-trade-producer</artifactId>
+            <version>${project.version}</version>
+        </dependency>
+        <dependency>
+            <groupId>log4j</groupId>
+            <artifactId>log4j</artifactId>
+            <version>1.2.17</version>
+        </dependency>
+    </dependencies>
+</project>

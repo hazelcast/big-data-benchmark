@@ -2,18 +2,14 @@
 <project xmlns="http://maven.apache.org/POM/4.0.0"
          xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"
          xsi:schemaLocation="http://maven.apache.org/POM/4.0.0 http://maven.apache.org/xsd/maven-4.0.0.xsd">
-    <groupId>com.hazelcast</groupId>
+    <groupId>com.hazelcast.jet.benchmark</groupId>
     <artifactId>big-data-benchmark</artifactId>
     <packaging>pom</packaging>
     <version>0.1-SNAPSHOT</version>
-    <name>big-data-benchmark</name>
 
     <modules>
-        <module>hadoop-word-count</module>
-        <module>jet-word-count</module>
-        <module>flink-word-count</module>
-        <module>spark-word-count</module>
-        <module>source-generator</module>
+        <module>word-count</module>
+        <module>trade-monitor</module>
     </modules>
     <properties>
         <main.basedir>${project.basedir}</main.basedir>
@@ -25,11 +21,12 @@
         <timestamp>${maven.build.timestamp}</timestamp>
 
         <junit.version>4.12</junit.version>
-        <hazelcast.version>3.8-SNAPSHOT</hazelcast.version>
         <hadoop.version>2.7.2</hadoop.version>
-        <jet.version>0.3</jet.version>
+        <jet.version>0.4-SNAPSHOT</jet.version>
         <flink.version>1.2.0</flink.version>
         <spark.version>2.1.0</spark.version>
+        <kafka.version>0.10.0</kafka.version>
+        <scala.version>2.11</scala.version>
     </properties>
 
     <repositories>
@@ -37,10 +34,6 @@
             <id>snapshot-repository</id>
             <name>Maven2 Snapshot Repository</name>
             <url>https://oss.sonatype.org/content/repositories/snapshots</url>
-        </repository>
-        <repository>
-            <id>-cloudbees-repository</id>
-            <url>https://repository-hazelcast-l337.forge.cloudbees.com/snapshot/</url>
         </repository>
     </repositories>
 
@@ -83,12 +76,17 @@
             </dependency>
             <dependency>
                 <groupId>com.hazelcast.jet</groupId>
-                <artifactId>hazelcast-jet-core</artifactId>
+                <artifactId>hazelcast-jet</artifactId>
                 <version>${jet.version}</version>
             </dependency>
             <dependency>
                 <groupId>com.hazelcast.jet</groupId>
                 <artifactId>hazelcast-jet-hadoop</artifactId>
+                <version>${jet.version}</version>
+            </dependency>
+            <dependency>
+                <groupId>com.hazelcast.jet</groupId>
+                <artifactId>hazelcast-jet-kafka</artifactId>
                 <version>${jet.version}</version>
             </dependency>
             <dependency>
@@ -118,18 +116,28 @@
             </dependency>
             <dependency>
                 <groupId>org.apache.flink</groupId>
-                <artifactId>flink-streaming-java_2.11</artifactId>
+                <artifactId>flink-streaming-java_${scala.version}</artifactId>
                 <version>${flink.version}</version>
             </dependency>
             <dependency>
                 <groupId>org.apache.flink</groupId>
-                <artifactId>flink-clients_2.11</artifactId>
+                <artifactId>flink-clients_${scala.version}</artifactId>
                 <version>${flink.version}</version>
             </dependency>
             <dependency>
                 <groupId>org.apache.spark</groupId>
-                <artifactId>spark-core_2.11</artifactId>
+                <artifactId>spark-core_${scala.version}</artifactId>
                 <version>${spark.version}</version>
+            </dependency>
+            <dependency>
+                <groupId>org.apache.spark</groupId>
+                <artifactId>spark-streaming_${scala.version}</artifactId>
+                <version>${spark.version}</version>
+            </dependency>
+            <dependency>
+                <groupId>org.apache.spark</groupId>
+                <artifactId>spark-streaming-kafka-0-10_${scala.version}</artifactId>
+                <version>2.1.0</version>
             </dependency>
         </dependencies>
     </dependencyManagement>
