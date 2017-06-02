@@ -21,7 +21,6 @@
         <timestamp>${maven.build.timestamp}</timestamp>
 
         <junit.version>4.12</junit.version>
-        <hazelcast.version>3.8.2</hazelcast.version>
         <hadoop.version>2.7.2</hadoop.version>
         <jet.version>0.4-SNAPSHOT</jet.version>
         <flink.version>1.2.0</flink.version>
@@ -35,10 +34,6 @@
             <id>snapshot-repository</id>
             <name>Maven2 Snapshot Repository</name>
             <url>https://oss.sonatype.org/content/repositories/snapshots</url>
-        </repository>
-        <repository>
-            <id>-cloudbees-repository</id>
-            <url>https://repository-hazelcast-l337.forge.cloudbees.com/snapshot/</url>
         </repository>
     </repositories>
 
