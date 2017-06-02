@@ -8,13 +8,12 @@ import java.io.BufferedReader;
 import java.io.IOException;
 import java.io.InputStreamReader;
 import java.net.URISyntaxException;
-import java.nio.file.Files;
-import java.nio.file.Paths;
 import java.util.HashMap;
 import java.util.Map;
 import java.util.Properties;
 import java.util.concurrent.ExecutorService;
 import java.util.concurrent.Executors;
+import java.util.concurrent.TimeUnit;
 import java.util.concurrent.locks.LockSupport;
 import java.util.stream.Stream;
 
@@ -23,6 +22,7 @@ import static java.util.concurrent.TimeUnit.SECONDS;
 
 public class RealTimeTradeProducer implements Runnable {
 
+    public static final int BATCH_SIZE = 100_000;
     private final KafkaProducer<Long, Trade> producer;
     private final int index;
     private final String topic;
@@ -37,7 +37,7 @@ public class RealTimeTradeProducer implements Runnable {
         this.index = index;
         this.topic = topic;
         this.tradesPerSecond = tradesPerSecond;
-        loadTickers(tradesPerSecond);
+        loadTickers();
         Properties props = new Properties();
         props.setProperty("bootstrap.servers", broker);
         props.setProperty("key.serializer", LongSerializer.class.getName());
@@ -65,11 +65,30 @@ public class RealTimeTradeProducer implements Runnable {
     }
 
     private void send(String topic, Trade trade) {
-        producer.send(new ProducerRecord<>(topic, trade));
+        producer.send(new ProducerRecord<>(topic, null, null, trade));
+    }
+
+    public void runUnthrottled() {
+        long start = System.nanoTime();
+        long produced = 0;
+        while (true) {
+            for (int i = 0; i < BATCH_SIZE; i++) {
+                send(topic, nextTrade(System.currentTimeMillis()));
+            }
+            produced += BATCH_SIZE;
+
+            long elapsed = System.nanoTime() - start;
+            double rate = produced / (double) TimeUnit.NANOSECONDS.toSeconds(elapsed);
+            System.out.println(index + ": Produced: " + rate + " trades/ sec");
+        }
     }
 
     @Override
     public void run() {
+        if (tradesPerSecond == -1) {
+            runUnthrottled();
+        }
+
         final long start = System.nanoTime();
         long totalTradesProduced = 0;
         for (long second = 0; ; second++) {
@@ -91,11 +110,11 @@ public class RealTimeTradeProducer implements Runnable {
         }
     }
 
-    private void loadTickers(long tradesPerSecond) {
+    private void loadTickers() {
         try (BufferedReader reader = new BufferedReader(new InputStreamReader(TradeProducer.class.getResourceAsStream
                 ("/nasdaqlisted.txt")))) {
             Stream<String> lines = reader.lines();
-            lines.skip(1).limit(tradesPerSecond).map(l -> l.split("\\|")[0]).forEach(t -> tickersToPrice.put
+            lines.skip(1).map(l -> l.split("\\|")[0]).forEach(t -> tickersToPrice.put
                     (t, 10000));
             tickers = tickersToPrice.keySet().toArray(new String[0]);
         } catch (Exception e) {

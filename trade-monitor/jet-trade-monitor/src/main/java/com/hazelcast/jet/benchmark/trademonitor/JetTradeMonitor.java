@@ -15,6 +15,7 @@ import org.apache.kafka.common.serialization.LongDeserializer;
 
 import java.util.Properties;
 import java.util.UUID;
+import java.util.concurrent.Future;
 
 import static com.hazelcast.jet.Edge.between;
 import static com.hazelcast.jet.Partitioner.HASH_CODE;
@@ -53,7 +54,8 @@ public class JetTradeMonitor {
         AggregateOperation<Object, LongAccumulator, Long> counting = AggregateOperations.counting();
 
         DAG dag = new DAG();
-        Vertex readKafka = dag.newVertex("read-kafka", streamKafka(kafkaProps, topic));
+        Vertex readKafka = dag.newVertex("read-kafka", streamKafka(kafkaProps, topic))
+                .localParallelism(4);
         Vertex extractTrade = dag.newVertex("extract-trade", map(entryValue()));
         Vertex insertPunctuation = dag.newVertex("insert-punctuation",
                 insertPunctuation(Trade::getTime, () -> PunctuationPolicies.withFixedLag(lagMs).throttleByFrame(windowDef)));
@@ -83,7 +85,14 @@ public class JetTradeMonitor {
 
         JetInstance jet = JetBootstrap.getInstance();
         System.out.println("Executing job..");
-        jet.newJob(dag).execute().get();
+        Future<Void> execute = jet.newJob(dag).execute();
+
+        System.in.read();
+
+        System.out.println("Cancelling job...");
+        execute.cancel(true);
+        execute.get();
+        jet.shutdown();
     }
 
     private static Properties getKafkaProperties(String brokerUrl, String offsetReset) {

@@ -27,7 +27,13 @@ import org.apache.spark.streaming.kafka010.ConsumerStrategies;
 import org.apache.spark.streaming.kafka010.KafkaUtils;
 import org.apache.spark.streaming.kafka010.LocationStrategies;
 import scala.Tuple2;
+import scala.Tuple3;
 
+import java.io.BufferedWriter;
+import java.io.IOException;
+import java.nio.file.Files;
+import java.nio.file.Paths;
+import java.nio.file.StandardOpenOption;
 import java.util.Collections;
 import java.util.HashMap;
 import java.util.Map;
@@ -36,34 +42,42 @@ import java.util.UUID;
 public class SparkTradeMonitor {
 
     public static void main(String[] args) throws InterruptedException {
-        if (args.length != 4) {
+        if (args.length != 6) {
             System.err.println("Usage:");
-            System.err.println("  SparkTradeMonitor <bootstrap.servers> <topic> <checkpoint directory> <output file>");
+            System.err.println("  SparkTradeMonitor <bootstrap.servers> <topic> <microbatchSize> <windowSize> " +
+                    "<slideBy> <output file>");
             System.exit(1);
         }
         System.setProperty("hazelcast.logging.type", "log4j");
-        final String brokerUri = args[0];
-        final String topic = args[1];
-        final String checkpointDirectory = args[2];
-        final String outputFile = args[3];
+        String brokerUri = args[0];
+        String topic = args[1];
+        int microbatchSize = Integer.parseInt(args[2]);
+        int windowSize = Integer.parseInt(args[3]);
+        int slideBy = Integer.parseInt(args[4]);
+        String outputPath = args[5];
 
         SparkConf conf = new SparkConf()
-                .setAppName("Trade Monitor")
-                .setMaster("local[2]");
-        JavaStreamingContext jsc = new JavaStreamingContext(conf, Durations.seconds(1));
-        jsc.checkpoint(checkpointDirectory);
+//                .setMaster("local[8]")
+                .setAppName("Trade Monitor");
+
+        JavaStreamingContext jsc = new JavaStreamingContext(conf, Durations.milliseconds(microbatchSize));
+        jsc.checkpoint(outputPath + "/checkpoints");
 
         final JavaInputDStream<ConsumerRecord<String, Trade>> stream =
                 KafkaUtils.createDirectStream(jsc,
-                        LocationStrategies.PreferConsistent(),
+                        LocationStrategies.PreferBrokers(),
                         ConsumerStrategies.<String, Trade>Subscribe(Collections.singleton(topic), getKafkaProperties(brokerUri)));
         JavaPairDStream<String, Long> paired = stream.mapToPair(record -> new Tuple2<>(record.value().getTicker(), 1L));
         JavaPairDStream<String, Long> reduced = paired.reduceByKeyAndWindow(
-                        (Long a, Long b) -> a + b,
-                        (Long a, Long b) -> a - b,
-                        Durations.seconds(10),
-                        Durations.seconds(1));
-        reduced.foreachRDD((rdd, time) -> rdd.saveAsTextFile(outputFile + time));
+                (Long a, Long b) -> a + b,
+                (Long a, Long b) -> a - b,
+                Durations.milliseconds(windowSize),
+                Durations.milliseconds(slideBy));
+
+        reduced
+                .transform((r, time) -> r.map(t ->
+                        new Tuple3<>(t._1(), t._2(), (System.currentTimeMillis() - time.milliseconds()))))
+                .dstream().saveAsTextFiles(outputPath + "/t", "");
 
         jsc.start();
         jsc.awaitTermination();
@@ -75,7 +89,7 @@ public class SparkTradeMonitor {
         props.put("group.id", UUID.randomUUID().toString());
         props.put("key.deserializer", LongDeserializer.class);
         props.put("value.deserializer", TradeDeserializer.class);
-        props.put("auto.offset.reset", "earliest");
+        props.put("auto.offset.reset", "latest");
         return props;
     }
 }
