@@ -72,12 +72,12 @@ public class JetTradeMonitor {
         Vertex fileSink = dag.newVertex("write-file", writeFile(outputPath));
 
         dag
-                .edge(between(readKafka, extractTrade).oneToMany())
-                .edge(between(extractTrade, insertPunctuation).oneToMany())
+                .edge(between(readKafka, extractTrade).isolated())
+                .edge(between(extractTrade, insertPunctuation).isolated())
                 .edge(between(insertPunctuation, accumulateByF).partitioned(Trade::getTicker, HASH_CODE))
                 .edge(between(accumulateByF, slidingW).partitioned(entryKey())
                                                  .distributed())
-                .edge(between(slidingW, formatOutput).oneToMany())
+                .edge(between(slidingW, formatOutput).isolated())
                 .edge(between(formatOutput, fileSink));
 
 
