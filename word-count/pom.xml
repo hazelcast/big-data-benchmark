@@ -16,5 +16,7 @@
         <module>jet-word-count</module>
         <module>spark-word-count</module>
         <module>flink-word-count</module>
+        <module>jet-map-word-count</module>
+        <module>hdfs-to-map</module>
     </modules>
 </project>
