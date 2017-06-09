@@ -1,15 +1,17 @@
-<project xmlns="http://maven.apache.org/POM/4.0.0" xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"
+<?xml version="1.0" encoding="UTF-8"?>
+<project xmlns="http://maven.apache.org/POM/4.0.0"
+         xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"
          xsi:schemaLocation="http://maven.apache.org/POM/4.0.0 http://maven.apache.org/xsd/maven-4.0.0.xsd">
+    <modelVersion>4.0.0</modelVersion>
+    <artifactId>jet-map-word-count</artifactId>
+    <packaging>jar</packaging>
 
     <parent>
-        <groupId>com.hazelcast.jet.benchmark</groupId>
         <artifactId>word-count</artifactId>
+        <groupId>com.hazelcast.jet.benchmark</groupId>
         <version>0.1-SNAPSHOT</version>
     </parent>
 
-    <modelVersion>4.0.0</modelVersion>
-    <artifactId>word-generator</artifactId>
-    <packaging>jar</packaging>
     <build>
         <plugins>
             <plugin>
@@ -18,7 +20,7 @@
                 <configuration>
                     <archive>
                         <manifest>
-                            <mainClass>com.hazelcast.jet.benchmark.wordcount.WordGenerator</mainClass>
+                            <mainClass>com.hazelcast.jet.benchmark.wordcount.JetMapWordCount</mainClass>
                         </manifest>
                     </archive>
                 </configuration>
@@ -26,15 +28,11 @@
         </plugins>
     </build>
 
-
     <dependencies>
         <dependency>
-            <groupId>org.apache.hadoop</groupId>
-            <artifactId>hadoop-common</artifactId>
-        </dependency>
-        <dependency>
-            <groupId>org.apache.hadoop</groupId>
-            <artifactId>hadoop-hdfs</artifactId>
+            <groupId>com.hazelcast.jet</groupId>
+            <artifactId>hazelcast-jet</artifactId>
         </dependency>
     </dependencies>
+
 </project>
