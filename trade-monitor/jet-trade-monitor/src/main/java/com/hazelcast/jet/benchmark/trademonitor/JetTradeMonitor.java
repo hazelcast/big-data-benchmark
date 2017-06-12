@@ -4,7 +4,7 @@ import com.hazelcast.jet.AggregateOperation;
 import com.hazelcast.jet.AggregateOperations;
 import com.hazelcast.jet.DAG;
 import com.hazelcast.jet.JetInstance;
-import com.hazelcast.jet.PunctuationPolicies;
+import com.hazelcast.jet.WatermarkPolicies;
 import com.hazelcast.jet.TimestampKind;
 import com.hazelcast.jet.TimestampedEntry;
 import com.hazelcast.jet.Vertex;
@@ -25,7 +25,7 @@ import static com.hazelcast.jet.function.DistributedFunctions.entryValue;
 import static com.hazelcast.jet.processor.KafkaProcessors.streamKafka;
 import static com.hazelcast.jet.processor.Processors.accumulateByFrame;
 import static com.hazelcast.jet.processor.Processors.combineToSlidingWindow;
-import static com.hazelcast.jet.processor.Processors.insertPunctuation;
+import static com.hazelcast.jet.processor.Processors.insertWatermarks;
 import static com.hazelcast.jet.processor.Processors.map;
 import static com.hazelcast.jet.processor.Sinks.writeFile;
 import static java.lang.System.currentTimeMillis;
@@ -58,7 +58,7 @@ public class JetTradeMonitor {
                 .localParallelism(4);
         Vertex extractTrade = dag.newVertex("extract-trade", map(entryValue()));
         Vertex insertPunctuation = dag.newVertex("insert-punctuation",
-                insertPunctuation(Trade::getTime, () -> PunctuationPolicies.withFixedLag(lagMs).throttleByFrame(windowDef)));
+                insertWatermarks(Trade::getTime, () -> WatermarkPolicies.withFixedLag(lagMs).throttleByFrame(windowDef)));
         Vertex accumulateByF = dag.newVertex("accumulate-by-frame",
                 accumulateByFrame(Trade::getTicker, Trade::getTime, TimestampKind.EVENT, windowDef, counting));
         Vertex slidingW = dag.newVertex("sliding-window", combineToSlidingWindow(windowDef, counting));
