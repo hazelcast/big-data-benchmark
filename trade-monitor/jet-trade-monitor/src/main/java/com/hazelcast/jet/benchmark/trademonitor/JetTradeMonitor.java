@@ -4,10 +4,10 @@ import com.hazelcast.jet.AggregateOperation;
 import com.hazelcast.jet.AggregateOperations;
 import com.hazelcast.jet.DAG;
 import com.hazelcast.jet.JetInstance;
-import com.hazelcast.jet.WatermarkPolicies;
 import com.hazelcast.jet.TimestampKind;
 import com.hazelcast.jet.TimestampedEntry;
 import com.hazelcast.jet.Vertex;
+import com.hazelcast.jet.WatermarkPolicies;
 import com.hazelcast.jet.WindowDefinition;
 import com.hazelcast.jet.accumulator.LongAccumulator;
 import com.hazelcast.jet.server.JetBootstrap;
@@ -19,6 +19,7 @@ import java.util.concurrent.Future;
 
 import static com.hazelcast.jet.Edge.between;
 import static com.hazelcast.jet.Partitioner.HASH_CODE;
+import static com.hazelcast.jet.WatermarkEmissionPolicy.emitByFrame;
 import static com.hazelcast.jet.WindowDefinition.slidingWindowDef;
 import static com.hazelcast.jet.function.DistributedFunctions.entryKey;
 import static com.hazelcast.jet.function.DistributedFunctions.entryValue;
@@ -58,7 +59,7 @@ public class JetTradeMonitor {
                 .localParallelism(4);
         Vertex extractTrade = dag.newVertex("extract-trade", map(entryValue()));
         Vertex insertPunctuation = dag.newVertex("insert-punctuation",
-                insertWatermarks(Trade::getTime, () -> WatermarkPolicies.withFixedLag(lagMs).throttleByFrame(windowDef)));
+                insertWatermarks(Trade::getTime, WatermarkPolicies.withFixedLag(lagMs), emitByFrame(windowDef)));
         Vertex accumulateByF = dag.newVertex("accumulate-by-frame",
                 accumulateByFrame(Trade::getTicker, Trade::getTime, TimestampKind.EVENT, windowDef, counting));
         Vertex slidingW = dag.newVertex("sliding-window", combineToSlidingWindow(windowDef, counting));
