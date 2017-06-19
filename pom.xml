@@ -22,7 +22,7 @@
 
         <junit.version>4.12</junit.version>
         <hadoop.version>2.7.2</hadoop.version>
-        <jet.version>0.4-SNAPSHOT</jet.version>
+        <jet.version>0.4</jet.version>
         <flink.version>1.2.0</flink.version>
         <spark.version>2.1.0</spark.version>
         <kafka.version>0.10.0</kafka.version>
