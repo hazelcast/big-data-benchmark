@@ -16,7 +16,9 @@
 
 package com.hazelcast.jet.benchmark.trademonitor;
 
-import org.apache.flink.api.common.functions.FoldFunction;
+import org.apache.commons.lang.mutable.MutableLong;
+import org.apache.flink.api.common.functions.AggregateFunction;
+import org.apache.flink.api.common.restartstrategy.RestartStrategies;
 import org.apache.flink.api.java.tuple.Tuple5;
 import org.apache.flink.core.fs.FileSystem.WriteMode;
 import org.apache.flink.streaming.api.TimeCharacteristic;
@@ -37,19 +39,19 @@ import org.apache.flink.util.Collector;
 import org.apache.kafka.common.serialization.LongDeserializer;
 
 import java.io.IOException;
+import java.time.Instant;
+import java.time.ZoneId;
 import java.util.Properties;
 import java.util.UUID;
-
-import static java.lang.System.currentTimeMillis;
 
 
 public class FlinkTradeMonitor {
 
     public static void main(String[] args) throws Exception {
-        if (args.length != 7) {
+        if (args.length != 8) {
             System.err.println("Usage:");
             System.err.println("  " + FlinkTradeMonitor.class.getSimpleName() +
-                    " <bootstrap.servers> <topic> <offset-reset> <maxLagMs> <windowSizeMs> <slideByMs> <outputPath>");
+                    " <bootstrap.servers> <topic> <offset-reset> <maxLagMs> <windowSizeMs> <slideByMs> <outputPath> <checkpointInt>");
             System.exit(1);
         }
         String brokerUri = args[0];
@@ -59,11 +61,15 @@ public class FlinkTradeMonitor {
         int windowSize = Integer.parseInt(args[4]);
         int slideBy = Integer.parseInt(args[5]);
         String outputPath = args[6];
+        int checkpointInt = Integer.parseInt(args[7]);
 
         // set up the execution environment
-        StreamExecutionEnvironment env =
-                StreamExecutionEnvironment.getExecutionEnvironment();
+        StreamExecutionEnvironment env = StreamExecutionEnvironment.getExecutionEnvironment();
         env.setStreamTimeCharacteristic(TimeCharacteristic.EventTime);
+        if (checkpointInt > 0) {
+            env.enableCheckpointing(checkpointInt);
+        }
+        env.setRestartStrategy(RestartStrategies.fixedDelayRestart(Integer.MAX_VALUE, 5000));
 
         DeserializationSchema<Trade> schema = new AbstractDeserializationSchema<Trade>() {
             TradeDeserializer deserializer = new TradeDeserializer();
@@ -75,7 +81,7 @@ public class FlinkTradeMonitor {
         };
 
         DataStreamSource<Trade> trades = env.addSource(new FlinkKafkaConsumer010<>(topic,
-                schema, getKafkaProperties(brokerUri, offsetReset))).setParallelism(8);
+                schema, getKafkaProperties(brokerUri, offsetReset))).setParallelism(2);
         AssignerWithPeriodicWatermarks<Trade> timestampExtractor
                 = new BoundedOutOfOrdernessTimestampExtractor<Trade>(Time.milliseconds(lagMs)) {
             @Override
@@ -92,20 +98,38 @@ public class FlinkTradeMonitor {
                 .assignTimestampsAndWatermarks(timestampExtractor)
                 .keyBy((Trade t) -> t.getTicker())
                 .window(window)
-                .fold(0L, new FoldFunction<Trade, Long>() {
+                .aggregate(new AggregateFunction<Trade, MutableLong, Long>() {
+
                     @Override
-                    public Long fold(Long accumulator, Trade value) throws Exception {
-                        return accumulator + 1;
+                    public MutableLong createAccumulator() {
+                        return new MutableLong();
                     }
-                }, new WindowFunction<Long, Tuple5<Long, String, Long, Long, Long>, String, TimeWindow>() {
+
                     @Override
-                    public void apply(String key, TimeWindow window, Iterable<Long> input, Collector<Tuple5<Long, String, Long, Long, Long>> out) throws Exception {
-                        long timeMs = currentTimeMillis();
+                    public void add(Trade value, MutableLong accumulator) {
+                        accumulator.increment();
+                    }
+
+                    @Override
+                    public MutableLong merge(MutableLong a, MutableLong b) {
+                        a.setValue(Math.addExact(a.longValue(), b.longValue()));
+                        return a;
+                    }
+
+                    @Override
+                    public Long getResult(MutableLong accumulator) {
+                        return accumulator.longValue();
+                    }
+                }, new WindowFunction<Long, Tuple5<String, String, Long, Long, Long>, String, TimeWindow>() {
+                    @Override
+                    public void apply(String key, TimeWindow window, Iterable<Long> input, Collector<Tuple5<String, String, Long, Long, Long>> out) throws Exception {
+                        long timeMs = System.currentTimeMillis();
                         long count = input.iterator().next();
                         long latencyMs = timeMs - window.getEnd();
-                        out.collect(new Tuple5<>(window.getEnd(), key, count, timeMs, latencyMs));
+                        out.collect(new Tuple5<>(Instant.ofEpochMilli(window.getEnd()).atZone(ZoneId.systemDefault()).toLocalTime().toString(), key, count, timeMs, latencyMs));
                     }
                 })
+                .setParallelism(2)
                 .writeAsCsv(outputPath, WriteMode.OVERWRITE);
 
         env.execute("Trade Monitor Example");

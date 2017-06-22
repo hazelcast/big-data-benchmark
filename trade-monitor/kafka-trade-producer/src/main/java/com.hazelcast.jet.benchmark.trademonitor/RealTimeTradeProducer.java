@@ -32,12 +32,12 @@ public class RealTimeTradeProducer implements Runnable {
     private int tickerIndex;
     private long lag;
 
-    private RealTimeTradeProducer(int index, String broker, String topic, int tradesPerSecond) throws IOException,
+    private RealTimeTradeProducer(int index, String broker, String topic, int tradesPerSecond, long numDistinctKeys) throws IOException,
             URISyntaxException {
         this.index = index;
         this.topic = topic;
         this.tradesPerSecond = tradesPerSecond;
-        loadTickers();
+        loadTickers(numDistinctKeys);
         Properties props = new Properties();
         props.setProperty("bootstrap.servers", broker);
         props.setProperty("key.serializer", LongSerializer.class.getName());
@@ -46,20 +46,20 @@ public class RealTimeTradeProducer implements Runnable {
     }
 
     public static void main(String[] args) throws Exception {
-        if (args.length != 4) {
+        if (args.length != 5) {
             System.err.println("Usage:");
-            System.err.println("  TradeProducer <bootstrap.servers> <topic> <num producers> <trades per second>");
+            System.err.println("  "+RealTimeTradeProducer.class+" <bootstrap.servers> <topic> <num producers> <trades per second> <num distinct keys>");
             System.exit(1);
         }
         String broker = args[0];
         String topic = args[1];
         int numProducers = Integer.parseInt(args[2]);
         int tradesPerSecond = Integer.parseInt(args[3]);
-
+        int numDistinctKeys = Integer.parseInt(args[4]);
 
         ExecutorService executorService = Executors.newFixedThreadPool(numProducers);
         for (int i = 0; i < numProducers; i++) {
-            RealTimeTradeProducer tradeProducer = new RealTimeTradeProducer(i, broker, topic, tradesPerSecond);
+            RealTimeTradeProducer tradeProducer = new RealTimeTradeProducer(i, broker, topic, tradesPerSecond, numDistinctKeys);
             executorService.submit(tradeProducer);
         }
     }
@@ -110,11 +110,11 @@ public class RealTimeTradeProducer implements Runnable {
         }
     }
 
-    private void loadTickers() {
+    private void loadTickers(long numDistinctKeys) {
         try (BufferedReader reader = new BufferedReader(new InputStreamReader(TradeProducer.class.getResourceAsStream
                 ("/nasdaqlisted.txt")))) {
             Stream<String> lines = reader.lines();
-            lines.skip(1).map(l -> l.split("\\|")[0]).forEach(t -> tickersToPrice.put
+            lines.skip(1).limit(numDistinctKeys).map(l -> l.split("\\|")[0]).forEach(t -> tickersToPrice.put
                     (t, 10000));
             tickers = tickersToPrice.keySet().toArray(new String[0]);
         } catch (Exception e) {
