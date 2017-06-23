@@ -29,11 +29,6 @@ import org.apache.spark.streaming.kafka010.LocationStrategies;
 import scala.Tuple2;
 import scala.Tuple3;
 
-import java.io.BufferedWriter;
-import java.io.IOException;
-import java.nio.file.Files;
-import java.nio.file.Paths;
-import java.nio.file.StandardOpenOption;
 import java.util.Collections;
 import java.util.HashMap;
 import java.util.Map;
@@ -42,26 +37,29 @@ import java.util.UUID;
 public class SparkTradeMonitor {
 
     public static void main(String[] args) throws InterruptedException {
-        if (args.length != 6) {
+        if (args.length != 7) {
             System.err.println("Usage:");
-            System.err.println("  SparkTradeMonitor <bootstrap.servers> <topic> <microbatchSize> <windowSize> " +
-                    "<slideBy> <output file>");
+            System.err.println("  SparkTradeMonitor <bootstrap.servers> <topic> <microbatchLength> <windowSize> " +
+                    "<slideBy> <output file> <checkpointDir>");
             System.exit(1);
         }
         System.setProperty("hazelcast.logging.type", "log4j");
         String brokerUri = args[0];
         String topic = args[1];
-        int microbatchSize = Integer.parseInt(args[2]);
+        int microbatchLength = Integer.parseInt(args[2]);
         int windowSize = Integer.parseInt(args[3]);
         int slideBy = Integer.parseInt(args[4]);
         String outputPath = args[5];
+        String checkpointDir = args[6];
 
         SparkConf conf = new SparkConf()
 //                .setMaster("local[8]")
                 .setAppName("Trade Monitor");
 
-        JavaStreamingContext jsc = new JavaStreamingContext(conf, Durations.milliseconds(microbatchSize));
-        jsc.checkpoint(outputPath + "/checkpoints");
+        JavaStreamingContext jsc = new JavaStreamingContext(conf, Durations.milliseconds(microbatchLength));
+        if (checkpointDir.length() > 0) {
+            jsc.checkpoint(checkpointDir);
+        }
 
         final JavaInputDStream<ConsumerRecord<String, Trade>> stream =
                 KafkaUtils.createDirectStream(jsc,
