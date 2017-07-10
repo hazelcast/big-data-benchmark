@@ -31,12 +31,12 @@ import java.util.concurrent.locks.LockSupport;
 import static java.util.concurrent.TimeUnit.SECONDS;
 
 
-public class FlinkWordCount {
+public class FlinkWordCount_Stream {
 
     public static void main(String[] args) throws Exception {
         if (args.length != 2) {
             System.err.println("Usage:");
-            System.err.println("  " + FlinkWordCount.class.getSimpleName() + " <inputPath> <outputPath>");
+            System.err.println("  " + FlinkWordCount_Stream.class.getSimpleName() + " <inputPath> <outputPath>");
             System.exit(1);
         }
 
