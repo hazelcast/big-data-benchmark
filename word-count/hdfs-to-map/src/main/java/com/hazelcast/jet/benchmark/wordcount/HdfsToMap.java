@@ -16,11 +16,11 @@
 
 package com.hazelcast.jet.benchmark.wordcount;
 
-import com.hazelcast.jet.DAG;
 import com.hazelcast.jet.Jet;
 import com.hazelcast.jet.JetInstance;
-import com.hazelcast.jet.Vertex;
 import com.hazelcast.jet.config.JobConfig;
+import com.hazelcast.jet.core.DAG;
+import com.hazelcast.jet.core.Vertex;
 import com.hazelcast.jet.stream.IStreamMap;
 import org.apache.hadoop.fs.Path;
 import org.apache.hadoop.io.LongWritable;
@@ -30,11 +30,11 @@ import org.apache.hadoop.mapred.TextInputFormat;
 
 import java.util.Map;
 
-import static com.hazelcast.jet.Edge.between;
 import static com.hazelcast.jet.Util.entry;
-import static com.hazelcast.jet.processor.HdfsProcessors.readHdfs;
-import static com.hazelcast.jet.processor.Processors.map;
-import static com.hazelcast.jet.processor.Sinks.writeMap;
+import static com.hazelcast.jet.core.Edge.between;
+import static com.hazelcast.jet.core.processor.HdfsProcessors.readHdfs;
+import static com.hazelcast.jet.core.processor.Processors.map;
+import static com.hazelcast.jet.core.processor.SinkProcessors.writeMap;
 
 public class HdfsToMap {
 

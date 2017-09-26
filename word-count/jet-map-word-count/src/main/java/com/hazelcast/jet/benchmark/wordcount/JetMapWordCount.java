@@ -1,27 +1,25 @@
 package com.hazelcast.jet.benchmark.wordcount;
 
 
-import com.hazelcast.jet.DAG;
-import com.hazelcast.jet.Edge;
 import com.hazelcast.jet.Jet;
 import com.hazelcast.jet.JetInstance;
-import com.hazelcast.jet.Vertex;
 import com.hazelcast.jet.config.JobConfig;
+import com.hazelcast.jet.core.DAG;
+import com.hazelcast.jet.core.Vertex;
 
 import java.util.Map;
 import java.util.StringTokenizer;
 
-import static com.hazelcast.jet.AggregateOperations.counting;
-import static com.hazelcast.jet.Edge.between;
-import static com.hazelcast.jet.Partitioner.HASH_CODE;
+import static com.hazelcast.jet.aggregate.AggregateOperations.counting;
+import static com.hazelcast.jet.core.Edge.between;
+import static com.hazelcast.jet.core.Partitioner.HASH_CODE;
+import static com.hazelcast.jet.core.processor.Processors.accumulateByKey;
+import static com.hazelcast.jet.core.processor.Processors.combineByKey;
+import static com.hazelcast.jet.core.processor.Processors.flatMap;
+import static com.hazelcast.jet.core.processor.SinkProcessors.writeMap;
+import static com.hazelcast.jet.core.processor.SourceProcessors.readMap;
 import static com.hazelcast.jet.function.DistributedFunctions.entryKey;
 import static com.hazelcast.jet.function.DistributedFunctions.wholeItem;
-import static com.hazelcast.jet.processor.Processors.accumulateByKey;
-import static com.hazelcast.jet.processor.Processors.combineByKey;
-import static com.hazelcast.jet.processor.Processors.flatMap;
-import static com.hazelcast.jet.processor.Sinks.writeMap;
-import static com.hazelcast.jet.processor.Sources.readMap;
-
 
 public class JetMapWordCount {
 
@@ -49,13 +47,13 @@ public class JetMapWordCount {
         Vertex combine = dag.newVertex("combine", combineByKey(counting()));
         Vertex consumer = dag.newVertex("writer", writeMap(sinkMap)).localParallelism(1);
 
-        dag.edge(Edge.between(producer, tokenizer))
+        dag.edge(between(producer, tokenizer))
            .edge(between(tokenizer, accumulate)
                    .partitioned(wholeItem(), HASH_CODE))
            .edge(between(accumulate, combine)
                    .distributed()
                    .partitioned(entryKey()))
-           .edge(Edge.between(combine, consumer));
+           .edge(between(combine, consumer));
 
         JobConfig config = new JobConfig();
         config.addClass(JetMapWordCount.class);

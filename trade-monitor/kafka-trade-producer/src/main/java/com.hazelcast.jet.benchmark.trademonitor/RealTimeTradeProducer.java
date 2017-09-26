@@ -4,18 +4,14 @@ import org.apache.kafka.clients.producer.KafkaProducer;
 import org.apache.kafka.clients.producer.ProducerRecord;
 import org.apache.kafka.common.serialization.LongSerializer;
 
-import java.io.BufferedReader;
 import java.io.IOException;
-import java.io.InputStreamReader;
 import java.net.URISyntaxException;
-import java.util.HashMap;
-import java.util.Map;
+import java.util.Arrays;
 import java.util.Properties;
 import java.util.concurrent.ExecutorService;
 import java.util.concurrent.Executors;
 import java.util.concurrent.TimeUnit;
 import java.util.concurrent.locks.LockSupport;
-import java.util.stream.Stream;
 
 import static java.util.concurrent.TimeUnit.MILLISECONDS;
 import static java.util.concurrent.TimeUnit.SECONDS;
@@ -27,17 +23,19 @@ public class RealTimeTradeProducer implements Runnable {
     private final int index;
     private final String topic;
     private final int tradesPerSecond;
-    private Map<String, Integer> tickersToPrice = new HashMap<>();
     private String[] tickers;
     private int tickerIndex;
-    private long lag;
 
-    private RealTimeTradeProducer(int index, String broker, String topic, int tradesPerSecond, long numDistinctKeys) throws IOException,
+    private RealTimeTradeProducer(int index, String broker, String topic, int tradesPerSecond, int keysFrom, int keysTo) throws IOException,
             URISyntaxException {
+        if (tradesPerSecond <= 0) {
+            throw new RuntimeException("tradesPerSecond=" + tradesPerSecond);
+        }
         this.index = index;
         this.topic = topic;
         this.tradesPerSecond = tradesPerSecond;
-        loadTickers(numDistinctKeys);
+        tickers = new String[keysTo - keysFrom];
+        Arrays.setAll(tickers, i -> "T-" + Integer.toString(i + keysFrom));
         Properties props = new Properties();
         props.setProperty("bootstrap.servers", broker);
         props.setProperty("key.serializer", LongSerializer.class.getName());
@@ -48,7 +46,7 @@ public class RealTimeTradeProducer implements Runnable {
     public static void main(String[] args) throws Exception {
         if (args.length != 5) {
             System.err.println("Usage:");
-            System.err.println("  "+RealTimeTradeProducer.class+" <bootstrap.servers> <topic> <num producers> <trades per second> <num distinct keys>");
+            System.err.println("  " + RealTimeTradeProducer.class.getSimpleName() + " <bootstrap.servers> <topic> <num producers> <trades per second> <num distinct keys>");
             System.exit(1);
         }
         String broker = args[0];
@@ -58,8 +56,19 @@ public class RealTimeTradeProducer implements Runnable {
         int numDistinctKeys = Integer.parseInt(args[4]);
 
         ExecutorService executorService = Executors.newFixedThreadPool(numProducers);
+        int keysPerProducer = numDistinctKeys / numProducers;
+        int tradesPerSecondPerProducer = tradesPerSecond / numProducers;
+        if (keysPerProducer * numProducers *100 / numDistinctKeys < 99) {
+            System.err.println("<num distinct keys> not divisible by <num producers> and error is >1%");
+            System.exit(1);
+        }
+        if (tradesPerSecondPerProducer * numProducers *100 / tradesPerSecond < 99) {
+            System.err.println("<trades per second> not divisible by <num producers> and error is >1%");
+            System.exit(1);
+        }
         for (int i = 0; i < numProducers; i++) {
-            RealTimeTradeProducer tradeProducer = new RealTimeTradeProducer(i, broker, topic, tradesPerSecond, numDistinctKeys);
+            RealTimeTradeProducer tradeProducer = new RealTimeTradeProducer(i, broker, topic, tradesPerSecondPerProducer,
+                    keysPerProducer * i, keysPerProducer * (i + 1));
             executorService.submit(tradeProducer);
         }
     }
@@ -68,7 +77,7 @@ public class RealTimeTradeProducer implements Runnable {
         producer.send(new ProducerRecord<>(topic, null, null, trade));
     }
 
-    public void runUnthrottled() {
+    private void runNonThrottled() {
         long start = System.nanoTime();
         long produced = 0;
         while (true) {
@@ -86,7 +95,7 @@ public class RealTimeTradeProducer implements Runnable {
     @Override
     public void run() {
         if (tradesPerSecond == -1) {
-            runUnthrottled();
+            runNonThrottled();
         }
 
         final long start = System.nanoTime();
@@ -105,20 +114,8 @@ public class RealTimeTradeProducer implements Runnable {
 
             long timeSinceStart = System.nanoTime() - start;
             long expectedProduced = (long) (tradesPerSecond * (double) timeSinceStart / SECONDS.toNanos(1));
-            System.out.println(index + ": Produced " + tradesPerSecond + " trades to topic '" + topic + '\''
-                    + ", current production deficit=" + (expectedProduced - totalTradesProduced));
-        }
-    }
-
-    private void loadTickers(long numDistinctKeys) {
-        try (BufferedReader reader = new BufferedReader(new InputStreamReader(TradeProducer.class.getResourceAsStream
-                ("/nasdaqlisted.txt")))) {
-            Stream<String> lines = reader.lines();
-            lines.skip(1).limit(numDistinctKeys).map(l -> l.split("\\|")[0]).forEach(t -> tickersToPrice.put
-                    (t, 10000));
-            tickers = tickersToPrice.keySet().toArray(new String[0]);
-        } catch (Exception e) {
-            throw new RuntimeException(e);
+            System.out.println(String.format("%2d: Produced %d trades to topic '%s', current production deficit=%d",
+                    index, tradesPerSecond, topic, (expectedProduced - totalTradesProduced)));
         }
     }
 
