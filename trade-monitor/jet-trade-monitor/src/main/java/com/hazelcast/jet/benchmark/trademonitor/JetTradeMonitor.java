@@ -25,12 +25,12 @@ import static com.hazelcast.jet.core.Partitioner.HASH_CODE;
 import static com.hazelcast.jet.core.WatermarkEmissionPolicy.emitByFrame;
 import static com.hazelcast.jet.core.WatermarkPolicies.withFixedLag;
 import static com.hazelcast.jet.core.WindowDefinition.slidingWindowDef;
-import static com.hazelcast.jet.core.processor.KafkaProcessors.streamKafka;
-import static com.hazelcast.jet.core.processor.Processors.accumulateByFrame;
-import static com.hazelcast.jet.core.processor.Processors.combineToSlidingWindow;
-import static com.hazelcast.jet.core.processor.Processors.insertWatermarks;
-import static com.hazelcast.jet.core.processor.Processors.map;
-import static com.hazelcast.jet.core.processor.SinkProcessors.writeFile;
+import static com.hazelcast.jet.core.processor.KafkaProcessors.streamKafkaP;
+import static com.hazelcast.jet.core.processor.Processors.accumulateByFrameP;
+import static com.hazelcast.jet.core.processor.Processors.combineToSlidingWindowP;
+import static com.hazelcast.jet.core.processor.Processors.insertWatermarksP;
+import static com.hazelcast.jet.core.processor.Processors.mapP;
+import static com.hazelcast.jet.core.processor.SinkProcessors.writeFileP;
 import static com.hazelcast.jet.function.DistributedFunctions.entryKey;
 import static com.hazelcast.jet.function.DistributedFunctions.entryValue;
 import static java.lang.System.currentTimeMillis;
@@ -63,16 +63,16 @@ public class JetTradeMonitor {
         AggregateOperation1<Object, LongAccumulator, Long> counting = AggregateOperations.counting();
 
         DAG dag = new DAG();
-        Vertex readKafka = dag.newVertex("read-kafka", streamKafka(kafkaProps, topic))
+        Vertex readKafka = dag.newVertex("read-kafka", streamKafkaP(kafkaProps, topic))
                               .localParallelism(1);
-        Vertex extractTrade = dag.newVertex("extract-trade", map(entryValue()));
+        Vertex extractTrade = dag.newVertex("extract-trade", mapP(entryValue()));
         Vertex insertWm = dag.newVertex("insert-wm",
-                insertWatermarks(Trade::getTime, withFixedLag(lagMs), emitByFrame(windowDef)));
+                insertWatermarksP(Trade::getTime, withFixedLag(lagMs), emitByFrame(windowDef)));
         Vertex accumulateByF = dag.newVertex("accumulate-by-frame",
-                accumulateByFrame(Trade::getTicker, Trade::getTime, TimestampKind.EVENT, windowDef, counting));
-        Vertex slidingW = dag.newVertex("sliding-window", combineToSlidingWindow(windowDef, counting));
+                accumulateByFrameP(Trade::getTicker, Trade::getTime, TimestampKind.EVENT, windowDef, counting));
+        Vertex slidingW = dag.newVertex("sliding-window", combineToSlidingWindowP(windowDef, counting));
         Vertex formatOutput = dag.newVertex("format-output",
-                map((TimestampedEntry entry) -> {
+                mapP((TimestampedEntry entry) -> {
                     long timeMs = currentTimeMillis();
                     long latencyMs = timeMs - entry.getTimestamp();
                     return Instant.ofEpochMilli(entry.getTimestamp()).atZone(ZoneId.systemDefault()).toLocalTime().toString()
@@ -81,7 +81,7 @@ public class JetTradeMonitor {
                             + "," + timeMs
                             + "," + (latencyMs - lagMs);
                 }));
-        Vertex fileSink = dag.newVertex("write-file", writeFile(outputPath))
+        Vertex fileSink = dag.newVertex("write-file", writeFileP(outputPath))
                 .localParallelism(1);
 
         dag

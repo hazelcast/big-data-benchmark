@@ -15,12 +15,13 @@ import java.util.StringTokenizer;
 import static com.hazelcast.jet.aggregate.AggregateOperations.counting;
 import static com.hazelcast.jet.core.Edge.between;
 import static com.hazelcast.jet.core.Partitioner.HASH_CODE;
-import static com.hazelcast.jet.core.processor.HdfsProcessors.readHdfs;
-import static com.hazelcast.jet.core.processor.HdfsProcessors.writeHdfs;
-import static com.hazelcast.jet.core.processor.Processors.accumulateByKey;
-import static com.hazelcast.jet.core.processor.Processors.combineByKey;
-import static com.hazelcast.jet.core.processor.Processors.flatMap;
+import static com.hazelcast.jet.core.processor.HdfsProcessors.readHdfsP;
+import static com.hazelcast.jet.core.processor.HdfsProcessors.writeHdfsP;
+import static com.hazelcast.jet.core.processor.Processors.accumulateByKeyP;
+import static com.hazelcast.jet.core.processor.Processors.combineByKeyP;
+import static com.hazelcast.jet.core.processor.Processors.flatMapP;
 import static com.hazelcast.jet.function.DistributedFunctions.entryKey;
+import static com.hazelcast.jet.function.DistributedFunctions.entryValue;
 import static com.hazelcast.jet.function.DistributedFunctions.wholeItem;
 
 public class JetWordCount {
@@ -38,22 +39,22 @@ public class JetWordCount {
         TextInputFormat.addInputPath(conf, new Path(inputPath));
         TextOutputFormat.setOutputPath(conf, new Path(outputPath));
 
-        Vertex producer = dag.newVertex("reader", readHdfs(conf,
+        Vertex producer = dag.newVertex("reader", readHdfsP(conf,
                 (k, v) -> v.toString())).localParallelism(3);
 
         Vertex tokenizer = dag.newVertex("tokenizer",
-                flatMap((String line) -> {
+                flatMapP((String line) -> {
                     StringTokenizer s = new StringTokenizer(line);
                     return () -> s.hasMoreTokens() ? s.nextToken() : null;
                 })
         );
 
         // word -> (word, count)
-        Vertex accumulate = dag.newVertex("accumulate", accumulateByKey(wholeItem(), counting()));
+        Vertex accumulate = dag.newVertex("accumulate", accumulateByKeyP(wholeItem(), counting()));
 
         // (word, count) -> (word, count)
-        Vertex combine = dag.newVertex("combine", combineByKey(counting()));
-        Vertex consumer = dag.newVertex("writer", writeHdfs(conf)).localParallelism(1);
+        Vertex combine = dag.newVertex("combine", combineByKeyP(counting()));
+        Vertex consumer = dag.newVertex("writer", writeHdfsP(conf, entryKey(), entryValue())).localParallelism(1);
 
         dag.edge(between(producer, tokenizer))
            .edge(between(tokenizer, accumulate)
@@ -68,7 +69,7 @@ public class JetWordCount {
 
         try {
             long start = System.currentTimeMillis();
-            client.newJob(dag, config).execute().get();
+            client.newJob(dag, config).join();
             System.out.println("Time=" + (System.currentTimeMillis() - start));
 
         } finally {

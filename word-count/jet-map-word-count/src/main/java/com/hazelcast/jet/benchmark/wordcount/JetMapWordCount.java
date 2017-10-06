@@ -13,11 +13,11 @@ import java.util.StringTokenizer;
 import static com.hazelcast.jet.aggregate.AggregateOperations.counting;
 import static com.hazelcast.jet.core.Edge.between;
 import static com.hazelcast.jet.core.Partitioner.HASH_CODE;
-import static com.hazelcast.jet.core.processor.Processors.accumulateByKey;
-import static com.hazelcast.jet.core.processor.Processors.combineByKey;
-import static com.hazelcast.jet.core.processor.Processors.flatMap;
-import static com.hazelcast.jet.core.processor.SinkProcessors.writeMap;
-import static com.hazelcast.jet.core.processor.SourceProcessors.readMap;
+import static com.hazelcast.jet.core.processor.Processors.accumulateByKeyP;
+import static com.hazelcast.jet.core.processor.Processors.combineByKeyP;
+import static com.hazelcast.jet.core.processor.Processors.flatMapP;
+import static com.hazelcast.jet.core.processor.SinkProcessors.writeMapP;
+import static com.hazelcast.jet.core.processor.SourceProcessors.readMapP;
 import static com.hazelcast.jet.function.DistributedFunctions.entryKey;
 import static com.hazelcast.jet.function.DistributedFunctions.wholeItem;
 
@@ -31,21 +31,21 @@ public class JetMapWordCount {
 
         DAG dag = new DAG();
 
-        Vertex producer = dag.newVertex("reader", readMap(sourceMap)).localParallelism(3);
+        Vertex producer = dag.newVertex("reader", readMapP(sourceMap)).localParallelism(3);
 
         Vertex tokenizer = dag.newVertex("tokenizer",
-                flatMap((Map.Entry<?, String> entry) -> {
+                flatMapP((Map.Entry<?, String> entry) -> {
                     StringTokenizer s = new StringTokenizer(entry.getValue());
                     return () -> s.hasMoreTokens() ? s.nextToken() : null;
                 })
         );
 
         // word -> (word, count)
-        Vertex accumulate = dag.newVertex("accumulate", accumulateByKey(wholeItem(), counting()));
+        Vertex accumulate = dag.newVertex("accumulate", accumulateByKeyP(wholeItem(), counting()));
 
         // (word, count) -> (word, count)
-        Vertex combine = dag.newVertex("combine", combineByKey(counting()));
-        Vertex consumer = dag.newVertex("writer", writeMap(sinkMap)).localParallelism(1);
+        Vertex combine = dag.newVertex("combine", combineByKeyP(counting()));
+        Vertex consumer = dag.newVertex("writer", writeMapP(sinkMap)).localParallelism(1);
 
         dag.edge(between(producer, tokenizer))
            .edge(between(tokenizer, accumulate)
@@ -60,7 +60,7 @@ public class JetMapWordCount {
 
         try {
             long start = System.currentTimeMillis();
-            client.newJob(dag, config).execute().get();
+            client.newJob(dag, config).join();
             System.out.println("Time=" + (System.currentTimeMillis() - start));
 
         } finally {

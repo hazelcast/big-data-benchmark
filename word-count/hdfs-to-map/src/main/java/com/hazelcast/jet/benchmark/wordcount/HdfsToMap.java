@@ -18,6 +18,7 @@ package com.hazelcast.jet.benchmark.wordcount;
 
 import com.hazelcast.jet.Jet;
 import com.hazelcast.jet.JetInstance;
+import com.hazelcast.jet.Util;
 import com.hazelcast.jet.config.JobConfig;
 import com.hazelcast.jet.core.DAG;
 import com.hazelcast.jet.core.Vertex;
@@ -32,9 +33,9 @@ import java.util.Map;
 
 import static com.hazelcast.jet.Util.entry;
 import static com.hazelcast.jet.core.Edge.between;
-import static com.hazelcast.jet.core.processor.HdfsProcessors.readHdfs;
-import static com.hazelcast.jet.core.processor.Processors.map;
-import static com.hazelcast.jet.core.processor.SinkProcessors.writeMap;
+import static com.hazelcast.jet.core.processor.HdfsProcessors.readHdfsP;
+import static com.hazelcast.jet.core.processor.Processors.mapP;
+import static com.hazelcast.jet.core.processor.SinkProcessors.writeMapP;
 
 public class HdfsToMap {
 
@@ -60,21 +61,19 @@ public class HdfsToMap {
         } finally {
             client.shutdown();
         }
-
     }
 
     private static void fillMap(JetInstance client, String name, String inputPath, int parallelism) throws Exception {
-
         DAG dag = new DAG();
         JobConf conf = new JobConf();
         conf.setInputFormat(TextInputFormat.class);
         TextInputFormat.addInputPath(conf, new Path(inputPath));
 
 
-        Vertex reader = dag.newVertex("reader", readHdfs(conf));
+        Vertex reader = dag.newVertex("reader", readHdfsP(conf, Util::entry));
         Vertex mapper = dag.newVertex("mapper",
-                map((Map.Entry<LongWritable, Text> e) -> entry(e.getKey().get(), e.getValue().toString())));
-        Vertex writer = dag.newVertex("writer", writeMap(name));
+                mapP((Map.Entry<LongWritable, Text> e) -> entry(e.getKey().get(), e.getValue().toString())));
+        Vertex writer = dag.newVertex("writer", writeMapP(name));
 
         reader.localParallelism(parallelism);
         mapper.localParallelism(parallelism);
@@ -87,6 +86,6 @@ public class HdfsToMap {
         JobConfig jobConfig = new JobConfig();
         jobConfig.addClass(HdfsToMap.class);
 
-        client.newJob(dag, jobConfig).execute().get();
+        client.newJob(dag, jobConfig).join();
     }
 }
