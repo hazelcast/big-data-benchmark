@@ -16,13 +16,13 @@
 
 package com.hazelcast.jet.benchmark.wordcount;
 
+import com.hazelcast.core.IMap;
 import com.hazelcast.jet.Jet;
 import com.hazelcast.jet.JetInstance;
 import com.hazelcast.jet.Util;
 import com.hazelcast.jet.config.JobConfig;
 import com.hazelcast.jet.core.DAG;
 import com.hazelcast.jet.core.Vertex;
-import com.hazelcast.jet.stream.IStreamMap;
 import org.apache.hadoop.fs.Path;
 import org.apache.hadoop.io.LongWritable;
 import org.apache.hadoop.io.Text;
@@ -50,7 +50,7 @@ public class HdfsToMap {
         int parallelism = Integer.parseInt(args[2]);
 
         JetInstance client = Jet.newJetClient();
-        IStreamMap<Long, String> map = client.getMap(name);
+        IMap<Long, String> map = client.getMap(name);
         map.clear();
 
         try {

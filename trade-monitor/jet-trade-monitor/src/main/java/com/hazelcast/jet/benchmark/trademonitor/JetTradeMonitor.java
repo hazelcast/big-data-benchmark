@@ -1,17 +1,13 @@
 package com.hazelcast.jet.benchmark.trademonitor;
 
 import com.hazelcast.jet.JetInstance;
-import com.hazelcast.jet.accumulator.LongAccumulator;
-import com.hazelcast.jet.aggregate.AggregateOperation1;
-import com.hazelcast.jet.aggregate.AggregateOperations;
+import com.hazelcast.jet.KafkaSources;
 import com.hazelcast.jet.config.JobConfig;
 import com.hazelcast.jet.config.ProcessingGuarantee;
-import com.hazelcast.jet.core.DAG;
-import com.hazelcast.jet.core.TimestampKind;
-import com.hazelcast.jet.core.TimestampedEntry;
-import com.hazelcast.jet.core.Vertex;
-import com.hazelcast.jet.core.WindowDefinition;
+import com.hazelcast.jet.pipeline.Pipeline;
+import com.hazelcast.jet.pipeline.Sinks;
 import com.hazelcast.jet.server.JetBootstrap;
+import org.apache.kafka.clients.consumer.ConsumerRecord;
 import org.apache.kafka.common.serialization.LongDeserializer;
 
 import java.time.Instant;
@@ -20,19 +16,8 @@ import java.util.Properties;
 import java.util.UUID;
 import java.util.concurrent.Future;
 
-import static com.hazelcast.jet.core.Edge.between;
-import static com.hazelcast.jet.core.Partitioner.HASH_CODE;
-import static com.hazelcast.jet.core.WatermarkEmissionPolicy.emitByFrame;
-import static com.hazelcast.jet.core.WatermarkPolicies.withFixedLag;
-import static com.hazelcast.jet.core.WindowDefinition.slidingWindowDef;
-import static com.hazelcast.jet.core.processor.KafkaProcessors.streamKafkaP;
-import static com.hazelcast.jet.core.processor.Processors.accumulateByFrameP;
-import static com.hazelcast.jet.core.processor.Processors.combineToSlidingWindowP;
-import static com.hazelcast.jet.core.processor.Processors.insertWatermarksP;
-import static com.hazelcast.jet.core.processor.Processors.mapP;
-import static com.hazelcast.jet.core.processor.SinkProcessors.writeFileP;
-import static com.hazelcast.jet.function.DistributedFunctions.entryKey;
-import static com.hazelcast.jet.function.DistributedFunctions.entryValue;
+import static com.hazelcast.jet.aggregate.AggregateOperations.counting;
+import static com.hazelcast.jet.pipeline.WindowDefinition.sliding;
 import static java.lang.System.currentTimeMillis;
 
 public class JetTradeMonitor {
@@ -59,40 +44,21 @@ public class JetTradeMonitor {
 
         Properties kafkaProps = getKafkaProperties(brokerUri, offsetReset);
 
-        WindowDefinition windowDef = slidingWindowDef(windowSize, slideBy);
-        AggregateOperation1<Object, LongAccumulator, Long> counting = AggregateOperations.counting();
-
-        DAG dag = new DAG();
-        Vertex readKafka = dag.newVertex("read-kafka", streamKafkaP(kafkaProps, topic))
-                              .localParallelism(1);
-        Vertex extractTrade = dag.newVertex("extract-trade", mapP(entryValue()));
-        Vertex insertWm = dag.newVertex("insert-wm",
-                insertWatermarksP(Trade::getTime, withFixedLag(lagMs), emitByFrame(windowDef)));
-        Vertex accumulateByF = dag.newVertex("accumulate-by-frame",
-                accumulateByFrameP(Trade::getTicker, Trade::getTime, TimestampKind.EVENT, windowDef, counting));
-        Vertex slidingW = dag.newVertex("sliding-window", combineToSlidingWindowP(windowDef, counting));
-        Vertex formatOutput = dag.newVertex("format-output",
-                mapP((TimestampedEntry entry) -> {
-                    long timeMs = currentTimeMillis();
-                    long latencyMs = timeMs - entry.getTimestamp();
-                    return Instant.ofEpochMilli(entry.getTimestamp()).atZone(ZoneId.systemDefault()).toLocalTime().toString()
-                            + "," + entry.getKey()
-                            + "," + entry.getValue()
-                            + "," + timeMs
-                            + "," + (latencyMs - lagMs);
-                }));
-        Vertex fileSink = dag.newVertex("write-file", writeFileP(outputPath))
-                .localParallelism(1);
-
-        dag
-                .edge(between(readKafka, extractTrade).isolated())
-                .edge(between(extractTrade, insertWm).isolated())
-                .edge(between(insertWm, accumulateByF).partitioned(Trade::getTicker, HASH_CODE))
-                .edge(between(accumulateByF, slidingW).partitioned(entryKey())
-                                                 .distributed())
-                .edge(between(slidingW, formatOutput).isolated())
-                .edge(between(formatOutput, fileSink));
-
+        Pipeline p = Pipeline.create();
+        p.drawFrom(KafkaSources.kafka(kafkaProps, (ConsumerRecord<Object, Trade> record) -> record.value(), topic))
+         .addTimestamps(Trade::getTime, lagMs)
+         .groupingKey(Trade::getTicker)
+         .window(sliding(windowSize, slideBy))
+         .aggregate(counting(), (start, end, key, value) -> {
+             long timeMs = currentTimeMillis();
+             long latencyMs = timeMs - end;
+             return Instant.ofEpochMilli(end).atZone(ZoneId.systemDefault()).toLocalTime().toString()
+                     + "," + key
+                     + "," + value
+                     + "," + timeMs
+                     + "," + (latencyMs - lagMs);
+         })
+         .drainTo(Sinks.files(outputPath));
 
 //        Jet.newJetInstance();
 
@@ -101,7 +67,7 @@ public class JetTradeMonitor {
         JobConfig config = new JobConfig();
         config.setSnapshotIntervalMillis(snapshotInterval);
         config.setProcessingGuarantee(guarantee);
-        Future<Void> future = jet.newJob(dag, config).getFuture();
+        Future<Void> future = jet.newJob(p, config).getFuture();
 
         System.in.read();
 

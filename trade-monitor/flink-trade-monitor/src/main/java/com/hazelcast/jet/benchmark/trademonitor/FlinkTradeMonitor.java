@@ -16,7 +16,7 @@
 
 package com.hazelcast.jet.benchmark.trademonitor;
 
-import org.apache.commons.lang.mutable.MutableLong;
+import org.apache.commons.lang3.mutable.MutableLong;
 import org.apache.flink.api.common.functions.AggregateFunction;
 import org.apache.flink.api.common.restartstrategy.RestartStrategies;
 import org.apache.flink.api.java.tuple.Tuple5;
@@ -137,8 +137,9 @@ public class FlinkTradeMonitor {
                     }
 
                     @Override
-                    public void add(Trade value, MutableLong accumulator) {
+                    public MutableLong add(Trade value, MutableLong accumulator) {
                         accumulator.increment();
+                        return accumulator;
                     }
 
                     @Override
