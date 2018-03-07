@@ -4,8 +4,6 @@ import org.apache.kafka.clients.producer.KafkaProducer;
 import org.apache.kafka.clients.producer.ProducerRecord;
 import org.apache.kafka.common.serialization.LongSerializer;
 
-import java.io.IOException;
-import java.net.URISyntaxException;
 import java.util.Arrays;
 import java.util.Properties;
 import java.util.concurrent.ExecutorService;
@@ -13,12 +11,12 @@ import java.util.concurrent.Executors;
 import java.util.concurrent.TimeUnit;
 import java.util.concurrent.locks.LockSupport;
 
-import static java.util.concurrent.TimeUnit.MILLISECONDS;
+import static java.util.concurrent.TimeUnit.NANOSECONDS;
 import static java.util.concurrent.TimeUnit.SECONDS;
 
 public class RealTimeTradeProducer implements Runnable {
 
-    public static final int BATCH_SIZE = 100_000;
+    private static final int BATCH_SIZE = 100_000;
     private final KafkaProducer<Long, Trade> producer;
     private final int index;
     private final String topic;
@@ -26,8 +24,7 @@ public class RealTimeTradeProducer implements Runnable {
     private String[] tickers;
     private int tickerIndex;
 
-    private RealTimeTradeProducer(int index, String broker, String topic, int tradesPerSecond, int keysFrom, int keysTo) throws IOException,
-            URISyntaxException {
+    private RealTimeTradeProducer(int index, String broker, String topic, int tradesPerSecond, int keysFrom, int keysTo) {
         if (tradesPerSecond <= 0) {
             throw new RuntimeException("tradesPerSecond=" + tradesPerSecond);
         }
@@ -43,7 +40,7 @@ public class RealTimeTradeProducer implements Runnable {
         this.producer = new KafkaProducer<>(props);
     }
 
-    public static void main(String[] args) throws Exception {
+    public static void main(String[] args) {
         if (args.length != 5) {
             System.err.println("Usage:");
             System.err.println("  " + RealTimeTradeProducer.class.getSimpleName() + " <bootstrap.servers> <topic> <num producers> <trades per second> <num distinct keys>");
@@ -88,7 +85,7 @@ public class RealTimeTradeProducer implements Runnable {
 
             long elapsed = System.nanoTime() - start;
             double rate = produced / (double) TimeUnit.NANOSECONDS.toSeconds(elapsed);
-            System.out.println(index + ": Produced: " + rate + " trades/ sec");
+            System.out.println(index + ": Produced: " + rate + " trades/sec");
         }
     }
 
@@ -100,22 +97,26 @@ public class RealTimeTradeProducer implements Runnable {
 
         final long start = System.nanoTime();
         long totalTradesProduced = 0;
-        for (long second = 0; ; second++) {
-            for (long j = 0, k = 0; j < tradesPerSecond; j++, k++) {
+        int lastSecond = 0;
+
+        while (true) {
+            long now = System.nanoTime();
+            final long expectedProduced = NANOSECONDS.toSeconds((now - start) * tradesPerSecond);
+            for (int i = 0; totalTradesProduced < expectedProduced && i < BATCH_SIZE; totalTradesProduced++, i++) {
                 send(topic, nextTrade(System.currentTimeMillis()));
-                totalTradesProduced++;
-                if (k == Math.min(100, tradesPerSecond / 10)) {
-                    long expectedTimeMs = second * 1000 + j * 1000 / tradesPerSecond;
-                    long sleepTime = start + MILLISECONDS.toNanos(expectedTimeMs) - System.nanoTime();
+            }
+            if (lastSecond < (lastSecond = (int) NANOSECONDS.toSeconds(now - start))) {
+                System.out.println(String.format("%2d: Produced %d trades to topic '%s', current production deficit=%d",
+                        index, tradesPerSecond, topic, (expectedProduced - totalTradesProduced)));
+            }
+            if (expectedProduced == totalTradesProduced) {
+                now = System.nanoTime();
+                long nextEventTime = start + SECONDS.toNanos(totalTradesProduced + 1) / tradesPerSecond;
+                long sleepTime = nextEventTime - now;
+                if (sleepTime > 10_000) { // don't bother with sleeping 0.01ms
                     LockSupport.parkNanos(sleepTime);
-                    k = 0;
                 }
             }
-
-            long timeSinceStart = System.nanoTime() - start;
-            long expectedProduced = (long) (tradesPerSecond * (double) timeSinceStart / SECONDS.toNanos(1));
-            System.out.println(String.format("%2d: Produced %d trades to topic '%s', current production deficit=%d",
-                    index, tradesPerSecond, topic, (expectedProduced - totalTradesProduced)));
         }
     }
 
