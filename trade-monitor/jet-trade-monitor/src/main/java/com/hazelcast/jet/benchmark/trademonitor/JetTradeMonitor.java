@@ -1,11 +1,13 @@
 package com.hazelcast.jet.benchmark.trademonitor;
 
 import com.hazelcast.jet.JetInstance;
+import com.hazelcast.jet.Job;
 import com.hazelcast.jet.KafkaSources;
 import com.hazelcast.jet.config.JobConfig;
 import com.hazelcast.jet.config.ProcessingGuarantee;
 import com.hazelcast.jet.pipeline.Pipeline;
 import com.hazelcast.jet.pipeline.Sinks;
+import com.hazelcast.jet.pipeline.StreamStage;
 import com.hazelcast.jet.server.JetBootstrap;
 import org.apache.kafka.clients.consumer.ConsumerRecord;
 import org.apache.kafka.common.serialization.LongDeserializer;
@@ -14,7 +16,6 @@ import java.time.Instant;
 import java.time.ZoneId;
 import java.util.Properties;
 import java.util.UUID;
-import java.util.concurrent.Future;
 
 import static com.hazelcast.jet.aggregate.AggregateOperations.counting;
 import static com.hazelcast.jet.pipeline.WindowDefinition.sliding;
@@ -23,12 +24,14 @@ import static java.lang.System.currentTimeMillis;
 public class JetTradeMonitor {
 
     public static void main(String[] args) throws Exception {
-        if (args.length != 9) {
+        if (args.length != 10) {
             System.err.println("Usage:");
             System.err.println("  " + JetTradeMonitor.class.getSimpleName() +
-                    " <bootstrap.servers> <topic> <offset-reset> <maxLagMs> <windowSizeMs> <slideByMs> <snapshotIntervalMs> <snapshotMode> <outputPath>");
+                    " <bootstrap.servers> <topic> <offset-reset> <maxLagMs> <windowSizeMs> <slideByMs>" +
+                    " <snapshotIntervalMs> <processingGuarantee> <outputPath> <latencyType>");
             System.err.println();
-            System.err.println("<snapshotMode> - \"exactly-once\" or \"at-least-once\"");
+            System.err.println("<processingGuarantee> - \"none\" or \"exactly-once\" or \"at-least-once\"");
+            System.err.println("<latencyType> - \"internal-latency\" or \"external-latency\"");
             System.exit(1);
         }
         System.setProperty("hazelcast.logging.type", "log4j");
@@ -41,38 +44,49 @@ public class JetTradeMonitor {
         int snapshotInterval = Integer.parseInt(args[6]);
         ProcessingGuarantee guarantee = ProcessingGuarantee.valueOf(args[7].toUpperCase().replace('-', '_'));
         String outputPath = args[8];
+        LatencyType latencyType = LatencyType.valueOf(args[9].toUpperCase().replace('-', '_'));
 
         Properties kafkaProps = getKafkaProperties(brokerUri, offsetReset);
 
         Pipeline p = Pipeline.create();
-        p.drawFrom(KafkaSources.kafka(kafkaProps, (ConsumerRecord<Object, Trade> record) -> record.value(), topic))
-         .addTimestamps(Trade::getTime, lagMs)
-         .groupingKey(Trade::getTicker)
-         .window(sliding(windowSize, slideBy))
-         .aggregate(counting(), (start, end, key, value) -> {
-             long timeMs = currentTimeMillis();
-             long latencyMs = timeMs - end;
-             return Instant.ofEpochMilli(end).atZone(ZoneId.systemDefault()).toLocalTime().toString()
-                     + "," + key
-                     + "," + value
-                     + "," + timeMs
-                     + "," + (latencyMs - lagMs);
-         })
-         .drainTo(Sinks.files(outputPath));
+        StreamStage<Trade> sourceStage = p.drawFrom(KafkaSources.kafka(kafkaProps, (ConsumerRecord<Object, Trade> record) -> record.value(), topic));
+        if (latencyType == LatencyType.INTERNAL_LATENCY) {
+            sourceStage = sourceStage.addTimestamps();
+        } else {
+            sourceStage = sourceStage.addTimestamps(Trade::getTime, lagMs);
+        }
 
-//        Jet.newJetInstance();
+        sourceStage
+                .groupingKey(Trade::getTicker)
+                .window(sliding(windowSize, slideBy))
+                .aggregate(counting(), (start, end, key, value) -> {
+                    long timeMs = currentTimeMillis();
+                    long latencyMs = timeMs - end;
+                    if (latencyType == LatencyType.EXTERNAL_LATENCY) {
+                        latencyMs -= lagMs;
+                    }
+                    return Instant.ofEpochMilli(end).atZone(ZoneId.systemDefault()).toLocalTime().toString()
+                            + "," + key
+                            + "," + value
+                            + "," + timeMs
+                            + "," + (latencyMs);
+                })
+                .drainTo(Sinks.files(outputPath));
 
-        JetInstance jet = JetBootstrap.getInstance();
+        // uncomment one of the following lines
+//        JetInstance jet = Jet.newJetInstance(); // uncomment for local execution
+        JetInstance jet = JetBootstrap.getInstance(); // uncomment for execution using jet-submit.sh
+
         System.out.println("Executing job..");
         JobConfig config = new JobConfig();
         config.setSnapshotIntervalMillis(snapshotInterval);
         config.setProcessingGuarantee(guarantee);
-        Future<Void> future = jet.newJob(p, config).getFuture();
+        Job job = jet.newJob(p, config);
 
         System.in.read();
 
         System.out.println("Cancelling job...");
-        future.cancel(true);
+        job.cancel();
         Thread.sleep(1000);
         jet.shutdown();
     }
@@ -87,5 +101,10 @@ public class JetTradeMonitor {
         props.setProperty("max.poll.records", "32768");
         //props.setProperty("metadata.max.age.ms", "5000");
         return props;
+    }
+
+    private enum LatencyType {
+        INTERNAL_LATENCY,
+        EXTERNAL_LATENCY
     }
 }
