@@ -33,9 +33,9 @@ import java.util.Map;
 
 import static com.hazelcast.jet.Util.entry;
 import static com.hazelcast.jet.core.Edge.between;
-import static com.hazelcast.jet.core.processor.HdfsProcessors.readHdfsP;
 import static com.hazelcast.jet.core.processor.Processors.mapP;
 import static com.hazelcast.jet.core.processor.SinkProcessors.writeMapP;
+import static com.hazelcast.jet.hadoop.HdfsProcessors.readHdfsP;
 
 public class HdfsToMap {
 

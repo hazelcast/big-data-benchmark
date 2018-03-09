@@ -2,9 +2,9 @@ package com.hazelcast.jet.benchmark.trademonitor;
 
 import com.hazelcast.jet.JetInstance;
 import com.hazelcast.jet.Job;
-import com.hazelcast.jet.KafkaSources;
 import com.hazelcast.jet.config.JobConfig;
 import com.hazelcast.jet.config.ProcessingGuarantee;
+import com.hazelcast.jet.kafka.KafkaSources;
 import com.hazelcast.jet.pipeline.Pipeline;
 import com.hazelcast.jet.pipeline.Sinks;
 import com.hazelcast.jet.pipeline.StreamStage;
@@ -49,7 +49,8 @@ public class JetTradeMonitor {
         Properties kafkaProps = getKafkaProperties(brokerUri, offsetReset);
 
         Pipeline p = Pipeline.create();
-        StreamStage<Trade> sourceStage = p.drawFrom(KafkaSources.kafka(kafkaProps, (ConsumerRecord<Object, Trade> record) -> record.value(), topic));
+        StreamStage<Trade> sourceStage = p.drawFrom(KafkaSources.kafka(kafkaProps, (ConsumerRecord<Object, Trade> record) -> record.value(), topic))
+                .setLocalParallelism(24);
         if (latencyType == LatencyType.INTERNAL_LATENCY) {
             sourceStage = sourceStage.addTimestamps();
         } else {
