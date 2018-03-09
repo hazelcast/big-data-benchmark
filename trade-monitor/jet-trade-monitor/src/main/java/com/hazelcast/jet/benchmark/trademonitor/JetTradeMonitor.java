@@ -13,6 +13,8 @@ import com.hazelcast.jet.accumulator.LongAccumulator;
 import com.hazelcast.jet.server.JetBootstrap;
 import org.apache.kafka.common.serialization.LongDeserializer;
 
+import java.time.Instant;
+import java.time.ZoneId;
 import java.util.Properties;
 import java.util.UUID;
 import java.util.concurrent.Future;
@@ -66,11 +68,14 @@ public class JetTradeMonitor {
         Vertex formatOutput = dag.newVertex("format-output",
                 map((TimestampedEntry entry) -> {
                     long timeMs = currentTimeMillis();
-                    long latencyMs = timeMs - entry.getTimestamp();
-                    return String.format("%d,%s,%s,%d,%d", entry.getTimestamp(), entry.getKey(), entry.getValue(),
-                            timeMs, latencyMs);
+                    long latencyMs = timeMs - entry.getTimestamp() - lagMs;
+                    return String.format("%s,%s,%s,%d,%d",
+                            Instant.ofEpochMilli(entry.getTimestamp()).atZone(ZoneId.systemDefault()).toLocalTime().toString(),
+                            entry.getKey(), entry.getValue(), timeMs, latencyMs);
                 }));
         Vertex fileSink = dag.newVertex("write-file", writeFile(outputPath));
+
+        fileSink.localParallelism(1);
 
         dag
                 .edge(between(readKafka, extractTrade).isolated())
