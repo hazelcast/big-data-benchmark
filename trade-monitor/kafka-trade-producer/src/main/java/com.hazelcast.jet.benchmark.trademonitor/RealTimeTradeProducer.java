@@ -98,16 +98,20 @@ public class RealTimeTradeProducer implements Runnable {
         final long start = System.nanoTime();
         long totalTradesProduced = 0;
         int lastSecond = 0;
+        int producedSinceLastPrinted = 0;
 
         while (true) {
             long now = System.nanoTime();
             final long expectedProduced = NANOSECONDS.toSeconds((now - start) * tradesPerSecond);
-            for (int i = 0; totalTradesProduced < expectedProduced && i < BATCH_SIZE; totalTradesProduced++, i++) {
+            for (int i = 0; totalTradesProduced < expectedProduced && i < BATCH_SIZE; i++) {
                 send(topic, nextTrade(System.currentTimeMillis()));
+                producedSinceLastPrinted++;
+                totalTradesProduced++;
             }
             if (lastSecond < (lastSecond = (int) NANOSECONDS.toSeconds(now - start))) {
                 System.out.println(String.format("%2d: Produced %d trades to topic '%s', current production deficit=%d",
-                        index, tradesPerSecond, topic, (expectedProduced - totalTradesProduced)));
+                        index, producedSinceLastPrinted, topic, (expectedProduced - totalTradesProduced)));
+                producedSinceLastPrinted = 0;
             }
             if (expectedProduced == totalTradesProduced) {
                 now = System.nanoTime();
