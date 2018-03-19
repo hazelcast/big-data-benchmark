@@ -102,7 +102,6 @@ public class JetTradeMonitor {
 
         System.out.println("Executing job..");
         JobConfig config = new JobConfig();
-        config.addClass(JetTradeMonitor.class);
         config.setSnapshotIntervalMillis(snapshotInterval);
         config.setProcessingGuarantee(guarantee);
         Job job = jet.newJob(p, config);
