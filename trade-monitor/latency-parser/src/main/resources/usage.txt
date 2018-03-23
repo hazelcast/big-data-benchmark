@@ -1,0 +1,9 @@
+Usage:
+    latency-parser <jet|flink|spark> <file|directory>
+
+For jet & flink, a file is required. Line format is: "<windowTimestamp>,
+<ignored>,<ignored>,<ignored>,<latency>".
+
+For spark, a directory is required. It should contain subdirectories
+with names \"t-<timestamp>\", each of which should contain files "part-*".
+This files should contain lines: "(<key>,<count>,<latency>)".

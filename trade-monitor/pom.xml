@@ -15,5 +15,6 @@
         <module>jet-trade-monitor</module>
         <module>flink-trade-monitor</module>
         <module>spark-trade-monitor</module>
+        <module>latency-parser</module>
     </modules>
 </project>
