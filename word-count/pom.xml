@@ -6,7 +6,7 @@
     <parent>
         <artifactId>big-data-benchmark</artifactId>
         <groupId>com.hazelcast.jet.benchmark</groupId>
-        <version>0.6-SNAPSHOT</version>
+        <version>0.7-SNAPSHOT</version>
     </parent>
     <packaging>pom</packaging>
     <artifactId>word-count</artifactId>
