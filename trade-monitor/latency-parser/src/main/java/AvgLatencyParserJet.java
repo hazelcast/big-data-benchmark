@@ -22,6 +22,7 @@ import java.time.LocalDate;
 import java.time.LocalDateTime;
 import java.time.LocalTime;
 import java.time.ZoneId;
+import java.util.Arrays;
 import java.util.LongSummaryStatistics;
 import java.util.Map.Entry;
 import java.util.stream.Collectors;
@@ -37,11 +38,17 @@ public class AvgLatencyParserJet {
         }
 
         Files.lines(file)
+             .parallel()
              .map(line -> line.split(","))
+             .filter(line -> {
+                 if (line.length != 5) {
+                     System.out.println("incorrect line: " + Arrays.toString(line));
+                 }
+                 return line.length == 5;
+             })
              .collect(Collectors.groupingBy(line -> parseTime(line[0]), Collectors.summarizingLong(line -> Long.parseLong(line[4]))))
              .entrySet().stream()
              .sorted(comparing(Entry<Long, LongSummaryStatistics>::getKey).reversed())
-             .limit(30)
              .forEach(e -> System.out.println(String.format("%-19s avg=%4d cnt=%5d min=%4d max=%4d",
                      toLocalDateTime(e.getKey()), (long) e.getValue().getAverage(), e.getValue().getCount(), e.getValue().getMin(), e.getValue().getMax())));
     }
