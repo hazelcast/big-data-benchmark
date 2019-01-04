@@ -7,7 +7,7 @@ min_delay=float('inf')
 max_delay=0
 
 for line in fileinput.input():
-    delay=int(line.strip('()\n').split(',')[4]) - 1000
+    delay=int(line.strip('()\n').split(',')[4])
     min_delay=min(min_delay, delay)
     max_delay=max(max_delay, delay)
     total+=delay
