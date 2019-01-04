@@ -1,12 +1,12 @@
 package com.hazelcast.jet.benchmark.wordcount;
 
 
-import com.hazelcast.jet.Jet;
 import com.hazelcast.jet.JetInstance;
 import com.hazelcast.jet.config.JobConfig;
 import com.hazelcast.jet.pipeline.Pipeline;
 import com.hazelcast.jet.pipeline.Sinks;
 import com.hazelcast.jet.pipeline.Sources;
+import com.hazelcast.jet.server.JetBootstrap;
 
 import java.util.StringTokenizer;
 
@@ -17,10 +17,14 @@ import static com.hazelcast.jet.function.DistributedFunctions.wholeItem;
 public class JetMapWordCount {
 
     public static void main(String[] args) {
-        JetInstance client = Jet.newJetClient();
+        if (args.length != 1) {
+            System.out.println("Usage <name>");
+            return;
+        }
+        JetInstance client = JetBootstrap.getInstance();
 
         String sourceMap = args[0];
-        String sinkMap = args[1];
+        String sinkMap = sourceMap + "-out";
 
         Pipeline p = Pipeline.create();
         p.drawFrom(Sources.<Object, String>map(sourceMap))

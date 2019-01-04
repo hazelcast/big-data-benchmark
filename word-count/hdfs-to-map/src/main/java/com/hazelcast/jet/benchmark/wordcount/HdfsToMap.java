@@ -17,45 +17,43 @@
 package com.hazelcast.jet.benchmark.wordcount;
 
 import com.hazelcast.core.IMap;
-import com.hazelcast.jet.Jet;
 import com.hazelcast.jet.JetInstance;
-import com.hazelcast.jet.Util;
 import com.hazelcast.jet.config.JobConfig;
-import com.hazelcast.jet.core.DAG;
-import com.hazelcast.jet.core.Vertex;
+import com.hazelcast.jet.hadoop.HdfsSources;
+import com.hazelcast.jet.pipeline.Pipeline;
+import com.hazelcast.jet.pipeline.Sinks;
+import com.hazelcast.jet.server.JetBootstrap;
+import org.apache.hadoop.fs.LocalFileSystem;
 import org.apache.hadoop.fs.Path;
+import org.apache.hadoop.hdfs.DistributedFileSystem;
 import org.apache.hadoop.io.LongWritable;
 import org.apache.hadoop.io.Text;
 import org.apache.hadoop.mapred.JobConf;
 import org.apache.hadoop.mapred.TextInputFormat;
 
-import java.util.Map;
-
 import static com.hazelcast.jet.Util.entry;
-import static com.hazelcast.jet.core.Edge.between;
-import static com.hazelcast.jet.core.processor.Processors.mapP;
-import static com.hazelcast.jet.core.processor.SinkProcessors.writeMapP;
-import static com.hazelcast.jet.hadoop.HdfsProcessors.readHdfsP;
+import static java.lang.Integer.parseInt;
 
 public class HdfsToMap {
 
-    public static void main(String[] args) throws Exception {
-        if (args.length == 0) {
-            System.out.println("Usage: hdfs-to-map <name> <input path> <parallelism>");
+    public static void main(String[] args) {
+        if (args.length != 4) {
+            System.out.println("Usage: hdfs-to-map <name> <hdfsUri> <input path>");
             return;
         }
 
         String name = args[0];
-        String inputPath = args[1];
-        int parallelism = Integer.parseInt(args[2]);
+        String hdfsUri = args[1];
+        String inputPath = args[2];
+        int parallelism = parseInt(args[3]);
 
-        JetInstance client = Jet.newJetClient();
+        JetInstance client = JetBootstrap.getInstance();
         IMap<Long, String> map = client.getMap(name);
         map.clear();
 
         try {
             long begin = System.currentTimeMillis();
-            fillMap(client, name, inputPath, parallelism);
+            fillMap(client, name, hdfsUri, inputPath, parallelism);
             long elapsed = System.currentTimeMillis() - begin;
             System.out.println("Time=" + elapsed);
         } finally {
@@ -63,29 +61,23 @@ public class HdfsToMap {
         }
     }
 
-    private static void fillMap(JetInstance client, String name, String inputPath, int parallelism) throws Exception {
-        DAG dag = new DAG();
+    private static void fillMap(JetInstance client, String name, String hdfsUri, String inputPath, int parallelism) {
         JobConf conf = new JobConf();
+        conf.set("fs.defaultFS", hdfsUri);
+        conf.set("fs.hdfs.impl", DistributedFileSystem.class.getName());
+        conf.set("fs.file.impl", LocalFileSystem.class.getName());
         conf.setInputFormat(TextInputFormat.class);
         TextInputFormat.addInputPath(conf, new Path(inputPath));
 
+        Pipeline p = Pipeline.create();
 
-        Vertex reader = dag.newVertex("reader", readHdfsP(conf, Util::entry));
-        Vertex mapper = dag.newVertex("mapper",
-                mapP((Map.Entry<LongWritable, Text> e) -> entry(e.getKey().get(), e.getValue().toString())));
-        Vertex writer = dag.newVertex("writer", writeMapP(name));
-
-        reader.localParallelism(parallelism);
-        mapper.localParallelism(parallelism);
-        writer.localParallelism(parallelism);
-
-        dag.edge(between(reader, mapper));
-        dag.edge(between(mapper, writer));
-
+        p.drawFrom(HdfsSources.<LongWritable, Text>hdfs(conf)).setLocalParallelism(parallelism)
+         .map(e -> entry(e.getKey().get(), e.getValue().toString())).setLocalParallelism(parallelism)
+         .drainTo(Sinks.map(name)).setLocalParallelism(parallelism);
 
         JobConfig jobConfig = new JobConfig();
         jobConfig.addClass(HdfsToMap.class);
 
-        client.newJob(dag, jobConfig).join();
+        client.newJob(p, jobConfig).join();
     }
 }

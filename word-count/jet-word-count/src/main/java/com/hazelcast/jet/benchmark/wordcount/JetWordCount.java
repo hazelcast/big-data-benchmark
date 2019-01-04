@@ -1,12 +1,14 @@
 package com.hazelcast.jet.benchmark.wordcount;
 
-import com.hazelcast.jet.Jet;
 import com.hazelcast.jet.JetInstance;
 import com.hazelcast.jet.config.JobConfig;
 import com.hazelcast.jet.hadoop.HdfsSinks;
 import com.hazelcast.jet.hadoop.HdfsSources;
 import com.hazelcast.jet.pipeline.Pipeline;
+import com.hazelcast.jet.server.JetBootstrap;
+import org.apache.hadoop.fs.LocalFileSystem;
 import org.apache.hadoop.fs.Path;
+import org.apache.hadoop.hdfs.DistributedFileSystem;
 import org.apache.hadoop.mapred.JobConf;
 import org.apache.hadoop.mapred.TextInputFormat;
 import org.apache.hadoop.mapred.TextOutputFormat;
@@ -20,13 +22,23 @@ import static com.hazelcast.jet.function.DistributedFunctions.wholeItem;
 
 public class JetWordCount {
 
-    public static void main(String[] args) throws Exception {
-        JetInstance client = Jet.newJetClient();
+    public static void main(String[] args) {
+        if (args.length != 3) {
+            System.out.println("Usage: ");
+            System.out.println("<hdfsUri> <inputPath> <outputPath>");
+            return;
+        }
 
-        String inputPath = args[0];
-        String outputPath = args[1] + "_" + System.currentTimeMillis();
+        JetInstance client = JetBootstrap.getInstance();
+
+        String hdfsUri = args[0];
+        String inputPath = args[1];
+        String outputPath = args[2] + "_" + System.currentTimeMillis();
 
         JobConf conf = new JobConf();
+        conf.set("fs.defaultFS", hdfsUri);
+        conf.set("fs.hdfs.impl", DistributedFileSystem.class.getName());
+        conf.set("fs.file.impl", LocalFileSystem.class.getName());
         conf.setOutputFormat(TextOutputFormat.class);
         conf.setInputFormat(TextInputFormat.class);
         TextInputFormat.addInputPath(conf, new Path(inputPath));

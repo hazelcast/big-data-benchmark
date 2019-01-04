@@ -104,14 +104,7 @@ public class JetTradeMonitor {
         JobConfig config = new JobConfig();
         config.setSnapshotIntervalMillis(snapshotInterval);
         config.setProcessingGuarantee(guarantee);
-        Job job = jet.newJob(p, config);
-
-        System.in.read();
-
-        System.out.println("Cancelling job...");
-        job.cancel();
-        Thread.sleep(1000);
-        jet.shutdown();
+        jet.newJob(p, config).join();
     }
 
     private static Trade deserialize(DeserializeContext ctx, byte[] bytes) {
