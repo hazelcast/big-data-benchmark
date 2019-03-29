@@ -75,12 +75,13 @@ public class JetTradeMonitor {
         sourceStage
                 .groupingKey(Trade::getTicker)
                 .window(sliding(windowSize, slideBy))
-                .aggregate(counting(), (start, end, key, value) -> {
+                .aggregate(counting())
+                .map(result -> {
                     long timeMs = currentTimeMillis();
-                    long latencyMs = timeMs - end - lagMs;
-                    return Instant.ofEpochMilli(end).atZone(ZoneId.systemDefault()).toLocalTime().toString()
-                            + "," + key
-                            + "," + value
+                    long latencyMs = timeMs - result.end() - lagMs;
+                    return Instant.ofEpochMilli(result.end()).atZone(ZoneId.systemDefault()).toLocalTime().toString()
+                            + "," + result.key()
+                            + "," + result.result()
                             + "," + timeMs
                             + "," + (latencyMs);
                 })

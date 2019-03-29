@@ -13,12 +13,12 @@ import org.apache.hadoop.mapred.JobConf;
 import org.apache.hadoop.mapred.TextInputFormat;
 import org.apache.hadoop.mapred.TextOutputFormat;
 
+import java.util.Map;
 import java.util.StringTokenizer;
 
 import static com.hazelcast.jet.aggregate.AggregateOperations.counting;
-import static com.hazelcast.jet.function.DistributedFunctions.entryKey;
-import static com.hazelcast.jet.function.DistributedFunctions.entryValue;
-import static com.hazelcast.jet.function.DistributedFunctions.wholeItem;
+import static com.hazelcast.jet.function.Functions.entryValue;
+import static com.hazelcast.jet.function.Functions.wholeItem;
 
 public class JetWordCount {
 
@@ -52,7 +52,7 @@ public class JetWordCount {
          })
          .groupingKey(wholeItem())
          .aggregate(counting())
-         .drainTo(HdfsSinks.hdfs(conf, entryKey(), entryValue()));
+         .drainTo(HdfsSinks.hdfs(conf, Map.Entry::getKey, entryValue()));
 
         JobConfig config = new JobConfig();
         config.addClass(JetWordCount.class);

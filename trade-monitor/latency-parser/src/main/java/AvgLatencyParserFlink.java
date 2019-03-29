@@ -14,8 +14,6 @@
  * limitations under the License.
  */
 
-import java.io.File;
-import java.io.IOException;
 import java.nio.file.Files;
 import java.nio.file.Path;
 import java.nio.file.Paths;
@@ -36,25 +34,25 @@ import static java.util.Comparator.comparing;
 import static java.util.stream.Collectors.groupingBy;
 import static java.util.stream.Collectors.summarizingLong;
 
-class AvgLatencyParserJet {
+class AvgLatencyParserFlink {
 
     private static final String[] benchmarks = {"500K-3K", "500K-50K", "2M-3K", "2M-50K", "4M-3K", "4M-50K"};
 
     public static void main(String[] args) throws Exception {
-        parseJet(Paths.get(args[0]));
+        parseFlink(Paths.get(args[0]));
     }
 
-    static void parseJet(Path runDirectory) throws Exception {
-        System.out.println("###### Parsing Jet Benchmarks\n\n");
+    static void parseFlink(Path runDirectory) throws Exception {
+        System.out.println("###### Parsing Flink Benchmarks\n\n");
         for (String benchmark : benchmarks) {
             System.out.println("#### Benchmark: [" + benchmark + "]\n");
-            parse(runDirectory.toString() + "/" + benchmark);
+            parse(runDirectory.toString() + "/out-" + benchmark);
             System.out.println("\n-----------------------------------------------\n\n");
         }
     }
 
-    private static void parse(String directory) throws Exception {
-        Stream<String> lines = getLines(directory);
+    private static void parse(String file) throws Exception {
+        Stream<String> lines = Files.lines(Paths.get(file));
 
         Map<Long, LongSummaryStatistics> statisticsMap =
                 lines.parallel()
@@ -85,19 +83,11 @@ class AvgLatencyParserJet {
 
     }
 
-    private static Stream<String> getLines(String directory) throws IOException {
-        File[] files = Paths.get(directory).toFile().listFiles();
-        if (files == null || files.length != 2) {
-            throw new IllegalArgumentException("Directory " + directory + " should contain exactly 2 files");
-        }
-        return Stream.concat(Files.lines(files[0].toPath()), Files.lines(files[1].toPath()));
-    }
-
     private static LocalDateTime toLocalDateTime(long startTime) {
         return Instant.ofEpochMilli(startTime).atZone(ZoneId.systemDefault()).toLocalDateTime();
     }
 
     private static long parseTime(String s) {
-       return LocalTime.parse(s).atDate(LocalDate.now()).atZone(ZoneId.systemDefault()).toInstant().toEpochMilli();
+        return LocalTime.parse(s).atDate(LocalDate.now()).atZone(ZoneId.systemDefault()).toInstant().toEpochMilli();
     }
 }
