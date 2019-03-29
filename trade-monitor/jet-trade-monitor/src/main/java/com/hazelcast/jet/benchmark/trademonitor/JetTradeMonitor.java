@@ -13,7 +13,6 @@ import com.hazelcast.jet.pipeline.Pipeline;
 import com.hazelcast.jet.pipeline.Sinks;
 import com.hazelcast.jet.pipeline.StreamStage;
 import com.hazelcast.jet.server.JetBootstrap;
-import org.HdrHistogram.AbstractHistogram;
 import org.HdrHistogram.Histogram;
 import org.apache.kafka.clients.consumer.ConsumerRecord;
 import org.apache.kafka.common.serialization.ByteArrayDeserializer;
@@ -23,8 +22,6 @@ import java.io.ByteArrayInputStream;
 import java.io.ByteArrayOutputStream;
 import java.io.DataInputStream;
 import java.io.PrintStream;
-import java.time.Instant;
-import java.time.ZoneId;
 import java.util.Arrays;
 import java.util.Properties;
 import java.util.UUID;
@@ -44,7 +41,9 @@ public class JetTradeMonitor {
             .andCombine(Histogram::add)
             .andExportFinish(histogram -> {
                 ByteArrayOutputStream bos = new ByteArrayOutputStream();
-                histogram.outputPercentileDistribution(new PrintStream(bos), 1.0);
+                PrintStream out = new PrintStream(bos);
+                histogram.outputPercentileDistribution(out, 1.0);
+                out.close();
                 return bos.toString();
             });
 
@@ -94,7 +93,7 @@ public class JetTradeMonitor {
                 .window(sliding(windowSize, slideBy))
                 .aggregate(counting())
                 .map(kwr -> currentTimeMillis() - kwr.end() - lagMs)
-                .window(tumbling(SECONDS.toMillis(120)))
+                .window(tumbling(SECONDS.toMillis(120)).setEarlyResultsPeriod(SECONDS.toMillis(30)))
                 .aggregate(latencyProfile).setLocalParallelism(1)
                 .map(WindowResult::result)
                 .drainTo(Sinks.files(outputPath)).setLocalParallelism(sinkParallelism);
