@@ -34,6 +34,7 @@ import static com.hazelcast.jet.benchmark.trademonitor.RealTimeTradeProducer.Mes
 import static com.hazelcast.jet.pipeline.WindowDefinition.sliding;
 import static com.hazelcast.jet.pipeline.WindowDefinition.tumbling;
 import static java.lang.System.currentTimeMillis;
+import static java.util.concurrent.TimeUnit.SECONDS;
 
 public class JetTradeMonitor {
 
@@ -93,7 +94,7 @@ public class JetTradeMonitor {
                 .window(sliding(windowSize, slideBy))
                 .aggregate(counting())
                 .map(kwr -> currentTimeMillis() - kwr.end() - lagMs)
-                .window(tumbling(Long.MAX_VALUE - 1))
+                .window(tumbling(SECONDS.toMillis(120)))
                 .aggregate(latencyProfile).setLocalParallelism(1)
                 .map(WindowResult::result)
                 .drainTo(Sinks.files(outputPath)).setLocalParallelism(sinkParallelism);
