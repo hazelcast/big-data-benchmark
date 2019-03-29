@@ -1,21 +1,28 @@
 package com.hazelcast.jet.benchmark.trademonitor;
 
 import com.hazelcast.jet.JetInstance;
+import com.hazelcast.jet.aggregate.AggregateOperation;
+import com.hazelcast.jet.aggregate.AggregateOperation1;
 import com.hazelcast.jet.benchmark.trademonitor.RealTimeTradeProducer.MessageType;
 import com.hazelcast.jet.config.JobConfig;
 import com.hazelcast.jet.config.ProcessingGuarantee;
+import com.hazelcast.jet.datamodel.WindowResult;
 import com.hazelcast.jet.kafka.KafkaSources;
 import com.hazelcast.jet.pipeline.ContextFactory;
 import com.hazelcast.jet.pipeline.Pipeline;
 import com.hazelcast.jet.pipeline.Sinks;
 import com.hazelcast.jet.pipeline.StreamStage;
 import com.hazelcast.jet.server.JetBootstrap;
+import org.HdrHistogram.AbstractHistogram;
+import org.HdrHistogram.Histogram;
 import org.apache.kafka.clients.consumer.ConsumerRecord;
 import org.apache.kafka.common.serialization.ByteArrayDeserializer;
 import org.apache.kafka.common.serialization.LongDeserializer;
 
 import java.io.ByteArrayInputStream;
+import java.io.ByteArrayOutputStream;
 import java.io.DataInputStream;
+import java.io.PrintStream;
 import java.time.Instant;
 import java.time.ZoneId;
 import java.util.Arrays;
@@ -25,9 +32,20 @@ import java.util.UUID;
 import static com.hazelcast.jet.aggregate.AggregateOperations.counting;
 import static com.hazelcast.jet.benchmark.trademonitor.RealTimeTradeProducer.MessageType.BYTE;
 import static com.hazelcast.jet.pipeline.WindowDefinition.sliding;
+import static com.hazelcast.jet.pipeline.WindowDefinition.tumbling;
 import static java.lang.System.currentTimeMillis;
 
 public class JetTradeMonitor {
+
+    private static final AggregateOperation1<Long, Histogram, String> latencyProfile = AggregateOperation
+            .withCreate(() -> new Histogram(5))
+            .<Long>andAccumulate(Histogram::recordValue)
+            .andCombine(Histogram::add)
+            .andExportFinish(histogram -> {
+                ByteArrayOutputStream bos = new ByteArrayOutputStream();
+                histogram.outputPercentileDistribution(new PrintStream(bos), 1.0);
+                return bos.toString();
+            });
 
     public static void main(String[] args) throws Exception {
         System.out.println("Arguments: " + Arrays.toString(args));
@@ -59,34 +77,26 @@ public class JetTradeMonitor {
         Properties kafkaProps = getKafkaProperties(brokerUri, offsetReset, messageType);
 
         Pipeline p = Pipeline.create();
-        StreamStage<Trade> sourceStage;
-        if (messageType == BYTE) {
-            sourceStage = p.drawFrom(KafkaSources.kafka(kafkaProps, (ConsumerRecord<Object, byte[]> record) -> record.value(), topic))
-                                              .withoutTimestamps()
-                                              .mapUsingContext(ContextFactory.withCreateFn(jet -> new DeserializeContext()), JetTradeMonitor::deserialize);
-        } else {
-            sourceStage = p.drawFrom(KafkaSources.kafka(kafkaProps, (ConsumerRecord<Object, Trade> record) -> record.value(), topic))
-                                              .withoutTimestamps()
-                                              .setLocalParallelism(kafkaParallelism);
-        }
-        sourceStage = sourceStage.addTimestamps(Trade::getTime, lagMs);
-        sourceStage = sourceStage.setLocalParallelism(kafkaParallelism);
-
+        StreamStage<Trade> sourceStage = (messageType == BYTE) 
+                ? p.drawFrom(KafkaSources
+                    .kafka(kafkaProps, (ConsumerRecord<Object, byte[]> record) -> record.value(), topic))
+                    .withoutTimestamps()
+                    .mapUsingContext(
+                            ContextFactory.withCreateFn(jet -> new Deserializer()),
+                            Deserializer::deserialize)
+                : p.drawFrom(KafkaSources
+                    .kafka(kafkaProps, (ConsumerRecord<Object, Trade> record) -> record.value(), topic))
+                    .withoutTimestamps().setLocalParallelism(kafkaParallelism);
         sourceStage
+                .addTimestamps(Trade::getTime, lagMs).setLocalParallelism(kafkaParallelism)
                 .groupingKey(Trade::getTicker)
                 .window(sliding(windowSize, slideBy))
                 .aggregate(counting())
-                .map(result -> {
-                    long timeMs = currentTimeMillis();
-                    long latencyMs = timeMs - result.end() - lagMs;
-                    return Instant.ofEpochMilli(result.end()).atZone(ZoneId.systemDefault()).toLocalTime().toString()
-                            + "," + result.key()
-                            + "," + result.result()
-                            + "," + timeMs
-                            + "," + (latencyMs);
-                })
-                .drainTo(Sinks.files(outputPath))
-                .setLocalParallelism(sinkParallelism);
+                .map(kwr -> currentTimeMillis() - kwr.end() - lagMs)
+                .window(tumbling(Long.MAX_VALUE - 1))
+                .aggregate(latencyProfile).setLocalParallelism(1)
+                .map(WindowResult::result)
+                .drainTo(Sinks.files(outputPath)).setLocalParallelism(sinkParallelism);
 
         // uncomment one of the following lines
 //        JetInstance jet = Jet.newJetInstance(); // uncomment for local execution
@@ -97,19 +107,6 @@ public class JetTradeMonitor {
         config.setSnapshotIntervalMillis(snapshotInterval);
         config.setProcessingGuarantee(guarantee);
         jet.newJob(p, config).join();
-    }
-
-    private static Trade deserialize(DeserializeContext ctx, byte[] bytes) {
-        ctx.is.setBuffer(bytes);
-        try {
-            String ticker = ctx.ois.readUTF();
-            long time = ctx.ois.readLong();
-            int price = ctx.ois.readInt();
-            int quantity = ctx.ois.readInt();
-            return new Trade(time, ticker, quantity, price);
-        } catch (Exception e) {
-            throw new RuntimeException(e);
-        }
     }
 
     private static Properties getKafkaProperties(String brokerUrl, String offsetReset, MessageType messageType) {
@@ -124,9 +121,22 @@ public class JetTradeMonitor {
         return props;
     }
 
-    private static class DeserializeContext {
+    private static class Deserializer {
         final ResettableByteArrayInputStream is = new ResettableByteArrayInputStream();
         final DataInputStream ois = new DataInputStream(is);
+
+        Trade deserialize(byte[] bytes) {
+            is.setBuffer(bytes);
+            try {
+                String ticker = ois.readUTF();
+                long time = ois.readLong();
+                int price = ois.readInt();
+                int quantity = ois.readInt();
+                return new Trade(time, ticker, quantity, price);
+            } catch (Exception e) {
+                throw new RuntimeException(e);
+            }
+        }
     }
 
     private static class ResettableByteArrayInputStream extends ByteArrayInputStream {
