@@ -93,7 +93,7 @@ public class JetTradeMonitor {
                 .window(sliding(windowSize, slideBy))
                 .aggregate(counting())
                 .map(kwr -> currentTimeMillis() - kwr.end() - lagMs)
-                .window(tumbling(SECONDS.toMillis(120)).setEarlyResultsPeriod(SECONDS.toMillis(30)))
+                .window(tumbling(Long.MAX_VALUE - 1).setEarlyResultsPeriod(SECONDS.toMillis(30)))
                 .aggregate(latencyProfile).setLocalParallelism(1)
                 .map(WindowResult::result)
                 .drainTo(Sinks.files(outputPath)).setLocalParallelism(sinkParallelism);
