@@ -35,7 +35,7 @@ import static java.util.concurrent.TimeUnit.SECONDS;
 public class JetTradeMonitor {
 
     private static final AggregateOperation1<Long, Histogram, String> latencyProfile = AggregateOperation
-            .withCreate(() -> new Histogram(0))
+            .withCreate(() -> new Histogram(5))
             .<Long>andAccumulate(Histogram::recordValue)
             .andCombine(Histogram::add)
             .andExportFinish(histogram -> {
@@ -46,7 +46,7 @@ public class JetTradeMonitor {
                 return bos.toString();
             });
 
-    public static void main(String[] args) throws Exception {
+    public static void main(String[] args) {
         System.out.println("Arguments: " + Arrays.toString(args));
         if (args.length != 12) {
             System.err.println("Usage:");
