@@ -6,7 +6,6 @@ import com.hazelcast.jet.aggregate.AggregateOperation1;
 import com.hazelcast.jet.benchmark.trademonitor.RealTimeTradeProducer.MessageType;
 import com.hazelcast.jet.config.JobConfig;
 import com.hazelcast.jet.config.ProcessingGuarantee;
-import com.hazelcast.jet.datamodel.WindowResult;
 import com.hazelcast.jet.kafka.KafkaSources;
 import com.hazelcast.jet.pipeline.ContextFactory;
 import com.hazelcast.jet.pipeline.Pipeline;
@@ -36,7 +35,7 @@ import static java.util.concurrent.TimeUnit.SECONDS;
 public class JetTradeMonitor {
 
     private static final AggregateOperation1<Long, Histogram, String> latencyProfile = AggregateOperation
-            .withCreate(() -> new Histogram(5))
+            .withCreate(() -> new Histogram(0))
             .<Long>andAccumulate(Histogram::recordValue)
             .andCombine(Histogram::add)
             .andExportFinish(histogram -> {
