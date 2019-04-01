@@ -84,18 +84,18 @@ public class JetTradeMonitor {
                     .mapUsingContext(
                             ContextFactory.withCreateFn(jet -> new Deserializer()),
                             Deserializer::deserialize)
+                    .addTimestamps(Trade::getTime, lagMs).setLocalParallelism(kafkaParallelism)
                 : p.drawFrom(KafkaSources
                     .kafka(kafkaProps, (ConsumerRecord<Object, Trade> record) -> record.value(), topic))
-                    .withoutTimestamps().setLocalParallelism(kafkaParallelism);
+                    .withTimestamps(Trade::getTime, lagMs).setLocalParallelism(kafkaParallelism);
         sourceStage
-                .addTimestamps(Trade::getTime, lagMs).setLocalParallelism(kafkaParallelism)
                 .groupingKey(Trade::getTicker)
                 .window(sliding(windowSize, slideBy))
                 .aggregate(counting())
                 .map(kwr -> currentTimeMillis() - kwr.end() - lagMs)
                 .window(tumbling(Long.MAX_VALUE - 1).setEarlyResultsPeriod(SECONDS.toMillis(30)))
                 .aggregate(latencyProfile).setLocalParallelism(1)
-                .map(WindowResult::result)
+                .map(wr -> String.format("Final result? %s%n%s", !wr.isEarly(), wr.result()))
                 .drainTo(Sinks.files(outputPath)).setLocalParallelism(sinkParallelism);
 
         // uncomment one of the following lines
