@@ -30,6 +30,7 @@ import static com.hazelcast.jet.aggregate.AggregateOperations.counting;
 import static com.hazelcast.jet.benchmark.trademonitor.RealTimeTradeProducer.MessageType.BYTE;
 import static com.hazelcast.jet.pipeline.WindowDefinition.sliding;
 import static com.hazelcast.jet.pipeline.WindowDefinition.tumbling;
+import static java.lang.Long.max;
 import static java.lang.System.currentTimeMillis;
 import static java.util.concurrent.TimeUnit.SECONDS;
 
@@ -37,7 +38,7 @@ public class JetTradeMonitor {
 
     private static final AggregateOperation1<Long, Histogram, String> latencyProfile = AggregateOperation
             .withCreate(() -> new Histogram(5))
-            .<Long>andAccumulate(Histogram::recordValue)
+            .<Long>andAccumulate((histogram, latencyMs) -> histogram.recordValue(max(0, latencyMs)))
             .andCombine(Histogram::add)
             .andExportFinish(histogram -> {
                 ByteArrayOutputStream bos = new ByteArrayOutputStream();
@@ -111,9 +112,9 @@ public class JetTradeMonitor {
                 .window(sliding(windowSize, slideBy))
                 .aggregate(counting())
                 .map(kwr -> currentTimeMillis() - kwr.end() - lagMs)
+                .peek(latency -> latency < 0, negLat -> "Negative latency: " + negLat)
                 .window(tumbling(Long.MAX_VALUE - 1).setEarlyResultsPeriod(SECONDS.toMillis(30)))
                 .aggregate(latencyProfile).setLocalParallelism(1)
-                .map(wr -> String.format("Final result? %s%n%s", !wr.isEarly(), wr.result()))
                 .drainTo(Sinks.files(outputPath)).setLocalParallelism(sinkParallelism);
 
         // uncomment one of the following lines
