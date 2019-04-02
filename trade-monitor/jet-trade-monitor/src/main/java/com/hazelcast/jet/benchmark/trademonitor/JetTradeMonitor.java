@@ -6,6 +6,7 @@ import com.hazelcast.jet.aggregate.AggregateOperation1;
 import com.hazelcast.jet.benchmark.trademonitor.RealTimeTradeProducer.MessageType;
 import com.hazelcast.jet.config.JobConfig;
 import com.hazelcast.jet.config.ProcessingGuarantee;
+import com.hazelcast.jet.datamodel.WindowResult;
 import com.hazelcast.jet.kafka.KafkaSources;
 import com.hazelcast.jet.pipeline.ContextFactory;
 import com.hazelcast.jet.pipeline.Pipeline;
@@ -118,6 +119,7 @@ public class JetTradeMonitor {
         aggregated
                 .window(tumbling(Long.MAX_VALUE - 1).setEarlyResultsPeriod(SECONDS.toMillis(30)))
                 .aggregate(latencyProfile).setLocalParallelism(1)
+                .map(WindowResult::result)
                 .drainTo(Sinks.files(outputPath)).setLocalParallelism(sinkParallelism);
 
         // uncomment one of the following lines
