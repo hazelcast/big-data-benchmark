@@ -19,7 +19,6 @@ package com.hazelcast.jet.benchmark.trademonitor;
 import org.apache.commons.lang3.mutable.MutableLong;
 import org.apache.flink.api.common.functions.AggregateFunction;
 import org.apache.flink.api.common.restartstrategy.RestartStrategies;
-import org.apache.flink.api.java.tuple.Tuple5;
 import org.apache.flink.contrib.streaming.state.RocksDBStateBackend;
 import org.apache.flink.core.fs.FileSystem.WriteMode;
 import org.apache.flink.runtime.state.filesystem.FsStateBackend;
@@ -28,7 +27,6 @@ import org.apache.flink.streaming.api.datastream.DataStreamSource;
 import org.apache.flink.streaming.api.environment.StreamExecutionEnvironment;
 import org.apache.flink.streaming.api.functions.AssignerWithPeriodicWatermarks;
 import org.apache.flink.streaming.api.functions.timestamps.BoundedOutOfOrdernessTimestampExtractor;
-import org.apache.flink.streaming.api.functions.windowing.WindowFunction;
 import org.apache.flink.streaming.api.windowing.assigners.SlidingEventTimeWindows;
 import org.apache.flink.streaming.api.windowing.assigners.TumblingEventTimeWindows;
 import org.apache.flink.streaming.api.windowing.assigners.WindowAssigner;
@@ -41,8 +39,6 @@ import org.apache.flink.util.Collector;
 import org.apache.kafka.common.serialization.LongDeserializer;
 
 import java.io.IOException;
-import java.time.Instant;
-import java.time.ZoneId;
 import java.util.Properties;
 import java.util.UUID;
 
@@ -121,16 +117,15 @@ public class FlinkTradeMonitor {
             }
         };
 
-        WindowAssigner window = windowSize == slideBy ?
+        WindowAssigner<Object, TimeWindow> window = windowSize == slideBy ?
                 TumblingEventTimeWindows.of(Time.milliseconds(windowSize)) :
                 SlidingEventTimeWindows.of(Time.milliseconds(windowSize), Time.milliseconds(slideBy));
 
         trades
                 .assignTimestampsAndWatermarks(timestampExtractor)
-                .keyBy((Trade t) -> t.getTicker())
+                .keyBy(Trade::getTicker)
                 .window(window)
                 .aggregate(new AggregateFunction<Trade, MutableLong, Long>() {
-
                     @Override
                     public MutableLong createAccumulator() {
                         return new MutableLong();
@@ -152,15 +147,8 @@ public class FlinkTradeMonitor {
                     public Long getResult(MutableLong accumulator) {
                         return accumulator.longValue();
                     }
-                }, new WindowFunction<Long, Tuple5<String, String, Long, Long, Long>, String, TimeWindow>() {
-                    @Override
-                    public void apply(String key, TimeWindow window, Iterable<Long> input, Collector<Tuple5<String, String, Long, Long, Long>> out) throws Exception {
-                        long timeMs = System.currentTimeMillis();
-                        long count = input.iterator().next();
-                        long latencyMs = timeMs - window.getEnd() - lagMs;
-                        out.collect(new Tuple5<>(Instant.ofEpochMilli(window.getEnd()).atZone(ZoneId.systemDefault()).toLocalTime().toString(), key, count, timeMs, latencyMs));
-                    }
-                })
+                }, (String key, TimeWindow win, Iterable<Long> input, Collector<Long> out) ->
+                        out.collect(System.currentTimeMillis() - win.getEnd() - lagMs))
                 .setParallelism(windowParallelism)
                 .writeAsCsv(outputPath, WriteMode.OVERWRITE);
 
