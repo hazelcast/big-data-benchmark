@@ -107,12 +107,15 @@ public class JetTradeMonitor {
                 : p.drawFrom(KafkaSources
                     .kafka(kafkaProps, (ConsumerRecord<Object, Trade> record) -> record.value(), topic))
                     .withTimestamps(Trade::getTime, lagMs).setLocalParallelism(kafkaParallelism);
-        sourceStage
+        StreamStage<Long> aggregated = sourceStage
                 .groupingKey(Trade::getTicker)
                 .window(sliding(windowSize, slideBy))
                 .aggregate(counting())
-                .map(kwr -> currentTimeMillis() - kwr.end() - lagMs)
-                .peek(latency -> latency < 0, negLat -> "Negative latency: " + negLat)
+                .map(kwr -> currentTimeMillis() - kwr.end() - lagMs);
+        aggregated
+                .filter(latency -> latency < 0)
+                .drainTo(Sinks.logger(negLat -> "Negative latency: " + negLat));
+        aggregated
                 .window(tumbling(Long.MAX_VALUE - 1).setEarlyResultsPeriod(SECONDS.toMillis(30)))
                 .aggregate(latencyProfile).setLocalParallelism(1)
                 .drainTo(Sinks.files(outputPath)).setLocalParallelism(sinkParallelism);
