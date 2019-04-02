@@ -27,6 +27,7 @@ import org.apache.flink.streaming.api.datastream.DataStreamSource;
 import org.apache.flink.streaming.api.environment.StreamExecutionEnvironment;
 import org.apache.flink.streaming.api.functions.AssignerWithPeriodicWatermarks;
 import org.apache.flink.streaming.api.functions.timestamps.BoundedOutOfOrdernessTimestampExtractor;
+import org.apache.flink.streaming.api.functions.windowing.WindowFunction;
 import org.apache.flink.streaming.api.windowing.assigners.SlidingEventTimeWindows;
 import org.apache.flink.streaming.api.windowing.assigners.TumblingEventTimeWindows;
 import org.apache.flink.streaming.api.windowing.assigners.WindowAssigner;
@@ -147,8 +148,11 @@ public class FlinkTradeMonitor {
                     public Long getResult(MutableLong accumulator) {
                         return accumulator.longValue();
                     }
-                }, (String key, TimeWindow win, Iterable<Long> input, Collector<Long> out) ->
-                        out.collect(System.currentTimeMillis() - win.getEnd() - lagMs))
+                }, new WindowFunction<Long, Long, String, TimeWindow>() {
+                    @Override public void apply(String key, TimeWindow win, Iterable<Long> input, Collector<Long> out) {
+                        out.collect(System.currentTimeMillis() - win.getEnd() - lagMs);
+                    }
+                })
                 .setParallelism(windowParallelism)
                 .writeAsCsv(outputPath, WriteMode.OVERWRITE);
 
