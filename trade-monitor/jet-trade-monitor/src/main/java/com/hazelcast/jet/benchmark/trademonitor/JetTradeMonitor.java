@@ -16,6 +16,7 @@ import org.HdrHistogram.Histogram;
 import org.apache.kafka.clients.consumer.ConsumerRecord;
 import org.apache.kafka.common.serialization.ByteArrayDeserializer;
 import org.apache.kafka.common.serialization.LongDeserializer;
+import org.apache.log4j.Logger;
 
 import java.io.ByteArrayInputStream;
 import java.io.ByteArrayOutputStream;
@@ -60,6 +61,7 @@ public class JetTradeMonitor {
             System.exit(1);
         }
         System.setProperty("hazelcast.logging.type", "log4j");
+        Logger logger = Logger.getLogger(JetTradeMonitor.class);
         String brokerUri = args[0];
         String topic = args[1];
         String offsetReset = args[2];
@@ -72,6 +74,23 @@ public class JetTradeMonitor {
         int kafkaParallelism = Integer.parseInt(args[9]);
         int sinkParallelism = Integer.parseInt(args[10]);
         MessageType messageType = MessageType.valueOf(args[11].toUpperCase());
+        logger.info(String.format("" +
+                "Starting Jet Trade Monitor with the following parameters:%n" +
+                "Kafka broker URI            %s%n" +
+                "Kafka topic                 %s%n" +
+                "Auto-reset message offset?  %s%n" +
+                "Allowed lag                 %s ms%n" +
+                "Sliding window size         %s ms%n" +
+                "Slide by                    %s ms%n" +
+                "Snapshot interval           %s ms%n" +
+                "Processing guarantee        %s%n" +
+                "Output path                 %s%n" +
+                "Source local parallelism    %s%n" +
+                "Sink local parallelism      %s%n" +
+                "Message type                %s%n",
+                brokerUri, topic, offsetReset, lagMs, windowSize, slideBy, snapshotInterval,
+                guarantee, outputPath, kafkaParallelism, sinkParallelism, messageType
+        ));
 
         Properties kafkaProps = getKafkaProperties(brokerUri, offsetReset, messageType);
 
@@ -113,7 +132,8 @@ public class JetTradeMonitor {
         props.setProperty("bootstrap.servers", brokerUrl);
         props.setProperty("group.id", UUID.randomUUID().toString());
         props.setProperty("key.deserializer", LongDeserializer.class.getName());
-        props.setProperty("value.deserializer", (messageType == BYTE ? ByteArrayDeserializer.class : TradeDeserializer.class).getName());
+        props.setProperty("value.deserializer",
+                (messageType == BYTE ? ByteArrayDeserializer.class : TradeDeserializer.class).getName());
         props.setProperty("auto.offset.reset", offsetReset);
         props.setProperty("max.poll.records", "32768");
         //props.setProperty("metadata.max.age.ms", "5000");
