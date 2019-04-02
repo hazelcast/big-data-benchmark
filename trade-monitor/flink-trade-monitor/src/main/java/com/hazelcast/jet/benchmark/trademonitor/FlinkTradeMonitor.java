@@ -154,7 +154,7 @@ public class FlinkTradeMonitor {
                     }
                 })
                 .setParallelism(windowParallelism)
-                .writeAsCsv(outputPath, WriteMode.OVERWRITE);
+                .writeAsText(outputPath, WriteMode.OVERWRITE);
 
         env.execute("Trade Monitor Example");
     }
