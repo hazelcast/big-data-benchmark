@@ -74,7 +74,7 @@ public class SparkTradeMonitor {
 
         reduced
                 .transform((r, time) -> r.map(t ->
-                        new Tuple3<>(t._1(), t._2(), (System.currentTimeMillis() - time.milliseconds()))))
+                        System.currentTimeMillis() - time.milliseconds()))
                 .dstream().saveAsTextFiles(outputPath + "/t", "");
 
         jsc.start();
