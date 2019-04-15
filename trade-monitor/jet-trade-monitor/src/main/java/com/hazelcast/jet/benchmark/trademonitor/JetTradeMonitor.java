@@ -28,6 +28,7 @@ import java.util.UUID;
 
 import static com.hazelcast.jet.aggregate.AggregateOperations.counting;
 import static com.hazelcast.jet.benchmark.trademonitor.RealTimeTradeProducer.MessageType.BYTE;
+import static com.hazelcast.jet.function.Functions.wholeItem;
 import static com.hazelcast.jet.pipeline.WindowDefinition.sliding;
 import static java.lang.Long.max;
 import static java.lang.System.currentTimeMillis;
@@ -114,6 +115,8 @@ public class JetTradeMonitor {
                 .filter(latency -> latency < 0)
                 .drainTo(Sinks.logger(negLat -> "Negative latency: " + negLat));
         aggregated
+                .groupingKey(x -> 0L)
+                .mapUsingContext(ContextFactory.withCreateFn(x -> null), (ctx, key, it) -> it)
                 .drainTo(Sinks.files(outputPath)).setLocalParallelism(sinkParallelism);
 
         // uncomment one of the following lines
