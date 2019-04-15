@@ -6,7 +6,6 @@ import com.hazelcast.jet.aggregate.AggregateOperation1;
 import com.hazelcast.jet.benchmark.trademonitor.RealTimeTradeProducer.MessageType;
 import com.hazelcast.jet.config.JobConfig;
 import com.hazelcast.jet.config.ProcessingGuarantee;
-import com.hazelcast.jet.datamodel.WindowResult;
 import com.hazelcast.jet.kafka.KafkaSources;
 import com.hazelcast.jet.pipeline.ContextFactory;
 import com.hazelcast.jet.pipeline.Pipeline;
@@ -30,10 +29,8 @@ import java.util.UUID;
 import static com.hazelcast.jet.aggregate.AggregateOperations.counting;
 import static com.hazelcast.jet.benchmark.trademonitor.RealTimeTradeProducer.MessageType.BYTE;
 import static com.hazelcast.jet.pipeline.WindowDefinition.sliding;
-import static com.hazelcast.jet.pipeline.WindowDefinition.tumbling;
 import static java.lang.Long.max;
 import static java.lang.System.currentTimeMillis;
-import static java.util.concurrent.TimeUnit.SECONDS;
 
 public class JetTradeMonitor {
 
@@ -117,9 +114,6 @@ public class JetTradeMonitor {
                 .filter(latency -> latency < 0)
                 .drainTo(Sinks.logger(negLat -> "Negative latency: " + negLat));
         aggregated
-                .window(tumbling(Long.MAX_VALUE - 1).setEarlyResultsPeriod(SECONDS.toMillis(30)))
-                .aggregate(latencyProfile).setLocalParallelism(1)
-                .map(WindowResult::result)
                 .drainTo(Sinks.files(outputPath)).setLocalParallelism(sinkParallelism);
 
         // uncomment one of the following lines
