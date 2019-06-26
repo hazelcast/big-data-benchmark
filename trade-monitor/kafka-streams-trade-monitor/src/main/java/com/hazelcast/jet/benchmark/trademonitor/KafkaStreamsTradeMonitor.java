@@ -4,10 +4,12 @@ import com.hazelcast.jet.benchmark.trademonitor.RealTimeTradeProducer.MessageTyp
 import org.apache.kafka.clients.consumer.ConsumerConfig;
 import org.apache.kafka.common.serialization.ByteArrayDeserializer;
 import org.apache.kafka.common.serialization.LongDeserializer;
+import org.apache.kafka.common.serialization.Serde;
 import org.apache.kafka.common.serialization.Serdes;
 import org.apache.kafka.streams.KafkaStreams;
 import org.apache.kafka.streams.StreamsBuilder;
 import org.apache.kafka.streams.StreamsConfig;
+import org.apache.kafka.streams.kstream.Consumed;
 import org.apache.kafka.streams.kstream.Grouped;
 import org.apache.kafka.streams.kstream.KStream;
 import org.apache.kafka.streams.kstream.Printed;
@@ -19,7 +21,6 @@ import java.io.ByteArrayInputStream;
 import java.io.DataInputStream;
 import java.util.Arrays;
 import java.util.Properties;
-import java.util.UUID;
 
 import static com.hazelcast.jet.benchmark.trademonitor.RealTimeTradeProducer.MessageType.BYTE;
 import static java.time.Duration.ofMillis;
@@ -69,9 +70,10 @@ public class KafkaStreamsTradeMonitor {
 
         Properties streamsProperties = getKafkaStreamsProperties(brokerUri, offsetReset, messageType, kafkaParallelism);
 
+        Serde<Trade> tradeSerde = Serdes.serdeFrom(new TradeSerializer(), new TradeDeserializer());
         final StreamsBuilder builder = new StreamsBuilder();
-        KStream<Long, Trade> stream = builder.stream(topic);
-        stream.groupBy((key, value) -> value.getTicker(), Grouped.with(Serdes.String(), new TradeSerde()))
+        KStream<Long, Trade> stream = builder.stream(topic, Consumed.with(Serdes.Long(), tradeSerde));
+        stream.groupBy((key, value) -> value.getTicker(), Grouped.with(Serdes.String(), tradeSerde))
               .windowedBy(TimeWindows.of(ofMillis(windowSize))
                                      .advanceBy(ofMillis(slideBy))
                                      .grace(ofMillis(lagMs)))
@@ -83,7 +85,6 @@ public class KafkaStreamsTradeMonitor {
               .print(Printed.toFile(outputPath));
 
         KafkaStreams streams = new KafkaStreams(builder.build(), streamsProperties);
-        streams.cleanUp();
         streams.start();
 
         // Add shutdown hook to respond to SIGTERM and gracefully close Kafka Streams
@@ -105,7 +106,6 @@ public class KafkaStreamsTradeMonitor {
         props.setProperty(StreamsConfig.DEFAULT_KEY_SERDE_CLASS_CONFIG, Serdes.Long().getClass().getName());
         props.setProperty(StreamsConfig.DEFAULT_VALUE_SERDE_CLASS_CONFIG, TradeSerde.class.getName());
         props.setProperty(StreamsConfig.NUM_STREAM_THREADS_CONFIG, String.valueOf(kafkaParallelism));
-        props.setProperty(ConsumerConfig.GROUP_ID_CONFIG, UUID.randomUUID().toString());
         props.setProperty(ConsumerConfig.KEY_DESERIALIZER_CLASS_CONFIG, LongDeserializer.class.getName());
         props.setProperty(ConsumerConfig.VALUE_DESERIALIZER_CLASS_CONFIG,
                 (messageType == BYTE ? ByteArrayDeserializer.class : TradeDeserializer.class).getName());
