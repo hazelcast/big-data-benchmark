@@ -29,12 +29,12 @@ public class KafkaStreamsTradeMonitor {
 
     public static void main(String[] args) {
         System.out.println("Arguments: " + Arrays.toString(args));
-        if (args.length != 11) {
+        if (args.length != 10) {
             System.err.println("Usage:");
             System.err.println("  " + KafkaStreamsTradeMonitor.class.getSimpleName() +
                     " <bootstrap.servers> <topic> <offset-reset> <maxLagMs> <windowSizeMs> <slideByMs>" +
                     " <snapshotIntervalMs> <outputPath> <kafkaParallelism>" +
-                    " <sinkParallelism> <messageType>");
+                    " <messageType>");
             System.err.println();
             System.err.println("<messageType> - byte|object");
             System.exit(1);
@@ -50,7 +50,6 @@ public class KafkaStreamsTradeMonitor {
         int snapshotInterval = Integer.parseInt(args[6].replace("_", ""));
         String outputPath = args[7];
         int kafkaParallelism = Integer.parseInt(args[8]);
-        int sinkParallelism = Integer.parseInt(args[9]);
         MessageType messageType = MessageType.valueOf(args[10].toUpperCase());
         logger.info(String.format("" +
                         "Starting Jet Trade Monitor with the following parameters:%n" +
@@ -62,14 +61,13 @@ public class KafkaStreamsTradeMonitor {
                         "Slide by                    %s ms%n" +
                         "Snapshot interval           %s ms%n" +
                         "Output path                 %s%n" +
-                        "Source local parallelism    %s%n" +
-                        "Sink local parallelism      %s%n" +
+                        "Kafka thread parallelism    %s%n" +
                         "Message type                %s%n",
                 brokerUri, topic, offsetReset, lagMs, windowSize, slideBy, snapshotInterval,
-                outputPath, kafkaParallelism, sinkParallelism, messageType
+                outputPath, kafkaParallelism, messageType
         ));
 
-        Properties streamsProperties = getKafkaStreamsProperties(brokerUri, offsetReset, messageType);
+        Properties streamsProperties = getKafkaStreamsProperties(brokerUri, offsetReset, messageType, kafkaParallelism);
 
         final StreamsBuilder builder = new StreamsBuilder();
         KStream<Long, Trade> stream = builder.stream(topic);
@@ -99,13 +97,14 @@ public class KafkaStreamsTradeMonitor {
 
     }
 
-    private static Properties getKafkaStreamsProperties(String brokerUrl, String offsetReset, MessageType messageType) {
+    private static Properties getKafkaStreamsProperties(String brokerUrl, String offsetReset, MessageType messageType, int kafkaParallelism) {
         Properties props = new Properties();
         props.setProperty(StreamsConfig.APPLICATION_ID_CONFIG, "kafka-streams-trade-monitor");
         props.setProperty(StreamsConfig.CLIENT_ID_CONFIG, "kafka-streams-trade-monitor-client");
         props.setProperty(StreamsConfig.BOOTSTRAP_SERVERS_CONFIG, brokerUrl);
         props.setProperty(StreamsConfig.DEFAULT_KEY_SERDE_CLASS_CONFIG, Serdes.Long().getClass().getName());
         props.setProperty(StreamsConfig.DEFAULT_VALUE_SERDE_CLASS_CONFIG, TradeSerde.class.getName());
+        props.setProperty(StreamsConfig.NUM_STREAM_THREADS_CONFIG, String.valueOf(kafkaParallelism));
         props.setProperty(ConsumerConfig.GROUP_ID_CONFIG, UUID.randomUUID().toString());
         props.setProperty(ConsumerConfig.KEY_DESERIALIZER_CLASS_CONFIG, LongDeserializer.class.getName());
         props.setProperty(ConsumerConfig.VALUE_DESERIALIZER_CLASS_CONFIG,

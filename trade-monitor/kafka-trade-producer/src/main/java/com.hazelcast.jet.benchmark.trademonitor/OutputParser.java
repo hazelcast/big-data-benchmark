@@ -16,44 +16,54 @@
 
 package com.hazelcast.jet.benchmark.trademonitor;
 
+
+import org.HdrHistogram.Histogram;
+
+import java.io.FileOutputStream;
 import java.io.IOException;
+import java.io.PrintStream;
 import java.nio.file.Files;
+import java.nio.file.Path;
 import java.nio.file.Paths;
-import java.util.LongSummaryStatistics;
-import java.util.concurrent.Callable;
 
 public class OutputParser {
 
-    public static long minMaxDiff(String path) throws IOException {
+    static Histogram histogram = new Histogram(5);
 
-        LongSummaryStatistics stats = Files.list(Paths.get(path))
-                                                           .flatMap(f -> uncheckCall(() -> Files.lines(f)))
-                                                           .mapToLong(l -> {
-                                                               try {
-                                                                   String ts = l.split(",")[3];
-                                                                   if (ts.length() != 13) {
-                                                                       throw new IllegalArgumentException();
-                                                                   }
-                                                                   return Long.valueOf(ts);
-                                                               } catch (Exception ignored) {
-                                                                   System.out.println("Malformed line: " + l);
-                                                                   return Long.MIN_VALUE;
-                                                               }
-                                                           }).filter(l -> l > Long.MIN_VALUE)
-                                                           .summaryStatistics();
+    public static void main(String[] args) throws Exception {
+        Files.list(Paths.get("/private/tmp/results"))
+             .peek(System.out::println)
+             .forEach(OutputParser::createHistogram);
 
-        return stats.getMax() - stats.getMin();
     }
 
-    public static void main(String [] args) throws IOException {
-        System.out.println(minMaxDiff("jet-output"));
-    }
-
-    public static <T> T uncheckCall(Callable<T> callable) {
+    private static void createHistogram(Path path){
+        System.out.println("histogram for " + path);
+        histogram.reset();
         try {
-            return callable.call();
-        } catch (Exception e) {
-            throw new RuntimeException(e);
+            Files.lines(path)
+                 .mapToInt(l -> {
+                     String ts = l.split(",")[1];
+                     return Integer.parseInt(ts.trim());
+                 })
+                 .filter( i -> {
+                     if (i < 0) {
+                         System.out.println("Negative " + i);
+                         return false;
+                     } else if (i == 0){
+                         System.out.println("Zero");
+                     }
+                     return true;
+                 })
+                 .forEach(latency -> histogram.recordValue(latency));
+            PrintStream printStream = new PrintStream(new FileOutputStream(path.toString() + ".histogram"));
+            histogram.outputPercentileDistribution(printStream, 1.0);
+        } catch (IOException e) {
+            e.printStackTrace();
         }
+
+
     }
+
+
 }
