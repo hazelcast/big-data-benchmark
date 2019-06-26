@@ -16,5 +16,6 @@
         <module>flink-trade-monitor</module>
         <module>spark-trade-monitor</module>
         <module>latency-parser</module>
+        <module>kafka-streams-trade-monitor</module>
     </modules>
 </project>
