@@ -50,7 +50,7 @@ public class KafkaStreamsTradeMonitor {
         int snapshotInterval = Integer.parseInt(args[6].replace("_", ""));
         String outputPath = args[7];
         int kafkaParallelism = Integer.parseInt(args[8]);
-        MessageType messageType = MessageType.valueOf(args[10].toUpperCase());
+        MessageType messageType = MessageType.valueOf(args[9].toUpperCase());
         logger.info(String.format("" +
                         "Starting Jet Trade Monitor with the following parameters:%n" +
                         "Kafka broker URI            %s%n" +
