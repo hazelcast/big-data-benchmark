@@ -8,7 +8,6 @@ import java.io.IOException;
 import java.util.Map;
 
 public class TradeSerializer implements Serializer<Trade> {
-    private final ByteArrayOutputStream outStream = new ByteArrayOutputStream();
 
     @Override
     public void configure(Map<String, ?> configs, boolean isKey) {
@@ -16,6 +15,7 @@ public class TradeSerializer implements Serializer<Trade> {
 
     @Override
     public byte[] serialize(String topic, Trade trade) {
+        ByteArrayOutputStream outStream = new ByteArrayOutputStream();
         DataOutputStream out = new DataOutputStream(outStream);
         try {
             out.writeUTF(trade.getTicker());
@@ -27,15 +27,15 @@ public class TradeSerializer implements Serializer<Trade> {
         }
         byte[] bytes = outStream.toByteArray();
         outStream.reset();
-        return bytes;
-    }
-
-    @Override
-    public void close() {
         try {
             outStream.close();
         } catch (IOException e) {
             throw new RuntimeException(e);
         }
+        return bytes;
+    }
+
+    @Override
+    public void close() {
     }
 }

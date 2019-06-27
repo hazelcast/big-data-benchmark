@@ -73,7 +73,7 @@ public class KafkaStreamsTradeMonitor {
         Serde<Trade> tradeSerde = Serdes.serdeFrom(new TradeSerializer(), new TradeDeserializer());
         final StreamsBuilder builder = new StreamsBuilder();
         KStream<Long, Trade> stream = builder.stream(topic, Consumed.with(Serdes.Long(), tradeSerde));
-        stream.groupBy((key, value) -> value.getTicker(), Grouped.with(Serdes.String(), tradeSerde))
+        stream.groupBy((key1, value1) -> value1.getTicker(), Grouped.with(Serdes.String(), tradeSerde))
               .windowedBy(TimeWindows.of(ofMillis(windowSize))
                                      .advanceBy(ofMillis(slideBy))
                                      .grace(ofMillis(lagMs)))
