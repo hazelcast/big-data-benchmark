@@ -32,12 +32,13 @@ public class OutputParser {
 
     public static void main(String[] args) throws Exception {
         Files.list(Paths.get("/private/tmp/results"))
+             .filter(p -> !p.toString().endsWith(".histogram"))
              .peek(System.out::println)
              .forEach(OutputParser::createHistogram);
 
     }
 
-    private static void createHistogram(Path path){
+    private static void createHistogram(Path path) {
         System.out.println("histogram for " + path);
         histogram.reset();
         try {
@@ -46,11 +47,11 @@ public class OutputParser {
                      String ts = l.split(",")[1];
                      return Integer.parseInt(ts.trim());
                  })
-                 .filter( i -> {
+                 .filter(i -> {
                      if (i < 0) {
                          System.out.println("Negative " + i);
                          return false;
-                     } else if (i == 0){
+                     } else if (i == 0) {
                          System.out.println("Zero");
                      }
                      return true;
