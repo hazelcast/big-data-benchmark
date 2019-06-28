@@ -3,7 +3,7 @@ package com.hazelcast.jet.benchmark.trademonitor;
 import org.apache.kafka.clients.producer.KafkaProducer;
 import org.apache.kafka.clients.producer.ProducerRecord;
 import org.apache.kafka.common.serialization.ByteArraySerializer;
-import org.apache.kafka.common.serialization.LongSerializer;
+import org.apache.kafka.common.serialization.StringSerializer;
 
 import java.io.ByteArrayOutputStream;
 import java.io.DataOutputStream;
@@ -21,7 +21,7 @@ import static java.util.concurrent.TimeUnit.SECONDS;
 public class RealTimeTradeProducer implements Runnable {
 
     private static final int BATCH_SIZE = 100_000;
-    private final KafkaProducer<Long, Object> producer;
+    private final KafkaProducer<String, Object> producer;
     private final int index;
     private final String topic;
     private final int tradesPerSecond;
@@ -42,7 +42,7 @@ public class RealTimeTradeProducer implements Runnable {
         Arrays.setAll(tickers, i -> "T-" + Integer.toString(i + keysFrom));
         Properties props = new Properties();
         props.setProperty("bootstrap.servers", broker);
-        props.setProperty("key.serializer", LongSerializer.class.getName());
+        props.setProperty("key.serializer", StringSerializer.class.getName());
         if (messageType == MessageType.BYTE) {
             props.setProperty("value.serializer", ByteArraySerializer.class.getName());
         } else {
@@ -70,11 +70,11 @@ public class RealTimeTradeProducer implements Runnable {
         ExecutorService executorService = Executors.newFixedThreadPool(numProducers);
         int keysPerProducer = numDistinctKeys / numProducers;
         int tradesPerSecondPerProducer = tradesPerSecond / numProducers;
-        if (keysPerProducer * numProducers *100 / numDistinctKeys < 99) {
+        if (keysPerProducer * numProducers * 100 / numDistinctKeys < 99) {
             System.err.println("<num distinct keys> not divisible by <num producers> and error is >1%");
             System.exit(1);
         }
-        if (tradesPerSecondPerProducer * numProducers *100 / tradesPerSecond < 99) {
+        if (tradesPerSecondPerProducer * numProducers * 100 / tradesPerSecond < 99) {
             System.err.println("<trades per second> not divisible by <num producers> and error is >1%");
             System.exit(1);
         }
@@ -92,7 +92,7 @@ public class RealTimeTradeProducer implements Runnable {
         } else {
             msgObject = trade;
         }
-        producer.send(new ProducerRecord<>(topic, msgObject));
+        producer.send(new ProducerRecord<>(topic, trade.getTicker(), msgObject));
     }
 
     private byte[] serialize(ByteArrayOutputStream baos, DataOutputStream oos, Trade trade) {
