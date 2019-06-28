@@ -9,6 +9,7 @@ import org.apache.kafka.streams.KafkaStreams;
 import org.apache.kafka.streams.StreamsBuilder;
 import org.apache.kafka.streams.StreamsConfig;
 import org.apache.kafka.streams.kstream.Consumed;
+import org.apache.kafka.streams.kstream.Grouped;
 import org.apache.kafka.streams.kstream.KStream;
 import org.apache.kafka.streams.kstream.Printed;
 import org.apache.kafka.streams.kstream.Suppressed.BufferConfig;
@@ -69,19 +70,10 @@ public class KafkaStreamsTradeMonitor {
         Properties streamsProperties = getKafkaStreamsProperties(brokerUri, offsetReset, messageType, kafkaParallelism);
 
         Serde<Trade> tradeSerde = Serdes.serdeFrom(new TradeSerializer(), new TradeDeserializer());
-//        final StreamsBuilder builder = new StreamsBuilder();
-//        KStream<String, Trade> stream = builder.stream(topic, Consumed.with(Serdes.String(), tradeSerde));
-//        stream
-//                .selectKey((key1, value1) -> value1.getTicker())
-//                .mapValues((readOnlyKey, value) -> System.currentTimeMillis() - value.getTime())
-//                .filter((key, value) -> value > 0)
-//                .print(Printed.toSysOut());
-
         final StreamsBuilder builder = new StreamsBuilder();
-        KStream<Long, Trade> stream = builder.stream(topic, Consumed.with(Serdes.Long(), tradeSerde));
+        KStream<String, Trade> stream = builder.stream(topic, Consumed.with(Serdes.String(), tradeSerde));
         stream
-                .selectKey((key1, value1) -> value1.getTicker())
-                .groupByKey()
+                .groupBy((key1, value1) -> value1.getTicker(), Grouped.with(Serdes.String(), tradeSerde))
                 .windowedBy(TimeWindows.of(ofMillis(windowSize))
                                        .advanceBy(ofMillis(slideBy))
                                        .grace(ofMillis(lagMs)))
@@ -90,7 +82,7 @@ public class KafkaStreamsTradeMonitor {
                 .mapValues((readOnlyKey, value) -> System.currentTimeMillis() - readOnlyKey.window().end() - lagMs)
                 .filter((key, value) -> value > 0)
                 .toStream()
-                .print(Printed.toSysOut());
+                .print(Printed.toFile(outputPath));
 
         KafkaStreams streams = new KafkaStreams(builder.build(), streamsProperties);
         streams.start();
@@ -113,6 +105,7 @@ public class KafkaStreamsTradeMonitor {
         props.setProperty(StreamsConfig.BOOTSTRAP_SERVERS_CONFIG, brokerUrl);
         props.setProperty(StreamsConfig.DEFAULT_KEY_SERDE_CLASS_CONFIG, Serdes.String().getClass().getName());
         props.setProperty(StreamsConfig.DEFAULT_VALUE_SERDE_CLASS_CONFIG, TradeSerde.class.getName());
+        props.setProperty(StreamsConfig.DEFAULT_WINDOWED_KEY_SERDE_INNER_CLASS, Serdes.String().getClass().getName());
         props.setProperty(StreamsConfig.NUM_STREAM_THREADS_CONFIG, String.valueOf(kafkaParallelism));
         props.setProperty(ConsumerConfig.KEY_DESERIALIZER_CLASS_CONFIG, String.class.getName());
         props.setProperty(ConsumerConfig.VALUE_DESERIALIZER_CLASS_CONFIG,
