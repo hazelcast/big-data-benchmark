@@ -10,11 +10,8 @@ import org.apache.kafka.streams.KafkaStreams;
 import org.apache.kafka.streams.StreamsBuilder;
 import org.apache.kafka.streams.StreamsConfig;
 import org.apache.kafka.streams.kstream.Consumed;
-import org.apache.kafka.streams.kstream.Grouped;
 import org.apache.kafka.streams.kstream.KStream;
 import org.apache.kafka.streams.kstream.Printed;
-import org.apache.kafka.streams.kstream.Suppressed.BufferConfig;
-import org.apache.kafka.streams.kstream.TimeWindows;
 import org.apache.log4j.Logger;
 
 import java.io.ByteArrayInputStream;
@@ -23,8 +20,6 @@ import java.util.Arrays;
 import java.util.Properties;
 
 import static com.hazelcast.jet.benchmark.trademonitor.RealTimeTradeProducer.MessageType.BYTE;
-import static java.time.Duration.ofMillis;
-import static org.apache.kafka.streams.kstream.Suppressed.untilWindowCloses;
 
 public class KafkaStreamsTradeMonitor {
 
@@ -73,16 +68,23 @@ public class KafkaStreamsTradeMonitor {
         Serde<Trade> tradeSerde = Serdes.serdeFrom(new TradeSerializer(), new TradeDeserializer());
         final StreamsBuilder builder = new StreamsBuilder();
         KStream<Long, Trade> stream = builder.stream(topic, Consumed.with(Serdes.Long(), tradeSerde));
-        stream.groupBy((key1, value1) -> value1.getTicker(), Grouped.with(Serdes.String(), tradeSerde))
-              .windowedBy(TimeWindows.of(ofMillis(windowSize))
-                                     .advanceBy(ofMillis(slideBy))
-                                     .grace(ofMillis(lagMs)))
-              .count()
-              .suppress(untilWindowCloses(BufferConfig.unbounded()))
-              .mapValues((readOnlyKey, value) -> System.currentTimeMillis() - readOnlyKey.window().endTime().toEpochMilli() - lagMs)
+        stream
+              .mapValues((readOnlyKey, value) -> System.currentTimeMillis() - value.getTime())
               .filter((key, value) -> value > 0)
-              .toStream()
               .print(Printed.toFile(outputPath));
+
+//        final StreamsBuilder builder = new StreamsBuilder();
+//        KStream<Long, Trade> stream = builder.stream(topic, Consumed.with(Serdes.Long(), tradeSerde));
+//        stream.groupBy((key1, value1) -> value1.getTicker(), Grouped.with(Serdes.String(), tradeSerde))
+//              .windowedBy(TimeWindows.of(ofMillis(windowSize))
+//                                     .advanceBy(ofMillis(slideBy))
+//                                     .grace(ofMillis(lagMs)))
+//              .count()
+//              .suppress(untilWindowCloses(BufferConfig.unbounded()))
+//              .mapValues((readOnlyKey, value) -> System.currentTimeMillis() - readOnlyKey.window().endTime().toEpochMilli() - lagMs)
+//              .filter((key, value) -> value > 0)
+//              .toStream()
+//              .print(Printed.toFile(outputPath));
 
         KafkaStreams streams = new KafkaStreams(builder.build(), streamsProperties);
         streams.start();

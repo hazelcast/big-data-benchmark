@@ -33,6 +33,7 @@ public class OutputParser {
     public static void main(String[] args) throws Exception {
         Files.list(Paths.get("/private/tmp/results"))
              .filter(p -> !p.toString().endsWith(".histogram"))
+             .filter(p -> !p.toString().endsWith(".DS_Store"))
              .peek(System.out::println)
              .forEach(OutputParser::createHistogram);
 
