@@ -119,7 +119,7 @@ public class KafkaStreamsTradeMonitor {
                 (messageType == BYTE ? ByteArrayDeserializer.class : TradeDeserializer.class).getName());
         props.setProperty(ConsumerConfig.AUTO_OFFSET_RESET_CONFIG, offsetReset);
         props.setProperty(ConsumerConfig.MAX_POLL_RECORDS_CONFIG, "32768");
-        props.setProperty(StreamsConfig.CACHE_MAX_BYTES_BUFFERING_CONFIG, "100_000_000");
+        props.setProperty(StreamsConfig.CACHE_MAX_BYTES_BUFFERING_CONFIG, "100000000");
         props.setProperty(StreamsConfig.COMMIT_INTERVAL_MS_CONFIG, "100");
 
         return props;
