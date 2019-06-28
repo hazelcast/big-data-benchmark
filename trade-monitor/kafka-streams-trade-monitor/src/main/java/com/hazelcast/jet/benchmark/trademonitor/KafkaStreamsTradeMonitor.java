@@ -3,7 +3,6 @@ package com.hazelcast.jet.benchmark.trademonitor;
 import com.hazelcast.jet.benchmark.trademonitor.RealTimeTradeProducer.MessageType;
 import org.apache.kafka.clients.consumer.ConsumerConfig;
 import org.apache.kafka.common.serialization.ByteArrayDeserializer;
-import org.apache.kafka.common.serialization.LongDeserializer;
 import org.apache.kafka.common.serialization.Serde;
 import org.apache.kafka.common.serialization.Serdes;
 import org.apache.kafka.streams.KafkaStreams;
@@ -12,6 +11,8 @@ import org.apache.kafka.streams.StreamsConfig;
 import org.apache.kafka.streams.kstream.Consumed;
 import org.apache.kafka.streams.kstream.KStream;
 import org.apache.kafka.streams.kstream.Printed;
+import org.apache.kafka.streams.kstream.Suppressed.BufferConfig;
+import org.apache.kafka.streams.kstream.TimeWindows;
 import org.apache.log4j.Logger;
 
 import java.io.ByteArrayInputStream;
@@ -20,6 +21,8 @@ import java.util.Arrays;
 import java.util.Properties;
 
 import static com.hazelcast.jet.benchmark.trademonitor.RealTimeTradeProducer.MessageType.BYTE;
+import static java.time.Duration.ofMillis;
+import static org.apache.kafka.streams.kstream.Suppressed.untilWindowCloses;
 
 public class KafkaStreamsTradeMonitor {
 
@@ -66,25 +69,28 @@ public class KafkaStreamsTradeMonitor {
         Properties streamsProperties = getKafkaStreamsProperties(brokerUri, offsetReset, messageType, kafkaParallelism);
 
         Serde<Trade> tradeSerde = Serdes.serdeFrom(new TradeSerializer(), new TradeDeserializer());
+//        final StreamsBuilder builder = new StreamsBuilder();
+//        KStream<String, Trade> stream = builder.stream(topic, Consumed.with(Serdes.String(), tradeSerde));
+//        stream
+//                .selectKey((key1, value1) -> value1.getTicker())
+//                .mapValues((readOnlyKey, value) -> System.currentTimeMillis() - value.getTime())
+//                .filter((key, value) -> value > 0)
+//                .print(Printed.toSysOut());
+
         final StreamsBuilder builder = new StreamsBuilder();
         KStream<Long, Trade> stream = builder.stream(topic, Consumed.with(Serdes.Long(), tradeSerde));
         stream
-              .mapValues((readOnlyKey, value) -> System.currentTimeMillis() - value.getTime())
-              .filter((key, value) -> value > 0)
-              .print(Printed.toFile(outputPath));
-
-//        final StreamsBuilder builder = new StreamsBuilder();
-//        KStream<Long, Trade> stream = builder.stream(topic, Consumed.with(Serdes.Long(), tradeSerde));
-//        stream.groupBy((key1, value1) -> value1.getTicker(), Grouped.with(Serdes.String(), tradeSerde))
-//              .windowedBy(TimeWindows.of(ofMillis(windowSize))
-//                                     .advanceBy(ofMillis(slideBy))
-//                                     .grace(ofMillis(lagMs)))
-//              .count()
-//              .suppress(untilWindowCloses(BufferConfig.unbounded()))
-//              .mapValues((readOnlyKey, value) -> System.currentTimeMillis() - readOnlyKey.window().endTime().toEpochMilli() - lagMs)
-//              .filter((key, value) -> value > 0)
-//              .toStream()
-//              .print(Printed.toFile(outputPath));
+                .selectKey((key1, value1) -> value1.getTicker())
+                .groupByKey()
+                .windowedBy(TimeWindows.of(ofMillis(windowSize))
+                                       .advanceBy(ofMillis(slideBy))
+                                       .grace(ofMillis(lagMs)))
+                .count()
+                .suppress(untilWindowCloses(BufferConfig.unbounded()))
+                .mapValues((readOnlyKey, value) -> System.currentTimeMillis() - readOnlyKey.window().end() - lagMs)
+                .filter((key, value) -> value > 0)
+                .toStream()
+                .print(Printed.toSysOut());
 
         KafkaStreams streams = new KafkaStreams(builder.build(), streamsProperties);
         streams.start();
@@ -105,14 +111,17 @@ public class KafkaStreamsTradeMonitor {
         props.setProperty(StreamsConfig.APPLICATION_ID_CONFIG, "kafka-streams-trade-monitor");
         props.setProperty(StreamsConfig.CLIENT_ID_CONFIG, "kafka-streams-trade-monitor-client");
         props.setProperty(StreamsConfig.BOOTSTRAP_SERVERS_CONFIG, brokerUrl);
-        props.setProperty(StreamsConfig.DEFAULT_KEY_SERDE_CLASS_CONFIG, Serdes.Long().getClass().getName());
+        props.setProperty(StreamsConfig.DEFAULT_KEY_SERDE_CLASS_CONFIG, Serdes.String().getClass().getName());
         props.setProperty(StreamsConfig.DEFAULT_VALUE_SERDE_CLASS_CONFIG, TradeSerde.class.getName());
         props.setProperty(StreamsConfig.NUM_STREAM_THREADS_CONFIG, String.valueOf(kafkaParallelism));
-        props.setProperty(ConsumerConfig.KEY_DESERIALIZER_CLASS_CONFIG, LongDeserializer.class.getName());
+        props.setProperty(ConsumerConfig.KEY_DESERIALIZER_CLASS_CONFIG, String.class.getName());
         props.setProperty(ConsumerConfig.VALUE_DESERIALIZER_CLASS_CONFIG,
                 (messageType == BYTE ? ByteArrayDeserializer.class : TradeDeserializer.class).getName());
         props.setProperty(ConsumerConfig.AUTO_OFFSET_RESET_CONFIG, offsetReset);
         props.setProperty(ConsumerConfig.MAX_POLL_RECORDS_CONFIG, "32768");
+        props.setProperty(StreamsConfig.CACHE_MAX_BYTES_BUFFERING_CONFIG, "100_000_000");
+        props.setProperty(StreamsConfig.COMMIT_INTERVAL_MS_CONFIG, "100");
+
         return props;
     }
 
