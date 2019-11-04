@@ -16,13 +16,13 @@
 
 package com.hazelcast.jet.benchmark.wordcount;
 
-import com.hazelcast.core.IMap;
 import com.hazelcast.jet.JetInstance;
 import com.hazelcast.jet.config.JobConfig;
 import com.hazelcast.jet.hadoop.HdfsSources;
 import com.hazelcast.jet.pipeline.Pipeline;
 import com.hazelcast.jet.pipeline.Sinks;
 import com.hazelcast.jet.server.JetBootstrap;
+import com.hazelcast.map.IMap;
 import org.apache.hadoop.fs.LocalFileSystem;
 import org.apache.hadoop.fs.Path;
 import org.apache.hadoop.hdfs.DistributedFileSystem;
