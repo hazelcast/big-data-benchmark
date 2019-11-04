@@ -10,9 +10,9 @@ import com.hazelcast.jet.server.JetBootstrap;
 
 import java.util.StringTokenizer;
 
+import static com.hazelcast.function.Functions.wholeItem;
 import static com.hazelcast.jet.Traversers.traverseEnumeration;
 import static com.hazelcast.jet.aggregate.AggregateOperations.counting;
-import static com.hazelcast.jet.function.Functions.wholeItem;
 
 public class JetMapWordCount {
 

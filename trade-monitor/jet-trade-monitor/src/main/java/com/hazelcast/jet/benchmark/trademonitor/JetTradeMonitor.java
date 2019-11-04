@@ -7,8 +7,8 @@ import com.hazelcast.jet.benchmark.trademonitor.RealTimeTradeProducer.MessageTyp
 import com.hazelcast.jet.config.JobConfig;
 import com.hazelcast.jet.config.ProcessingGuarantee;
 import com.hazelcast.jet.kafka.KafkaSources;
-import com.hazelcast.jet.pipeline.ContextFactory;
 import com.hazelcast.jet.pipeline.Pipeline;
+import com.hazelcast.jet.pipeline.ServiceFactory;
 import com.hazelcast.jet.pipeline.Sinks;
 import com.hazelcast.jet.pipeline.StreamStage;
 import com.hazelcast.jet.server.JetBootstrap;
@@ -28,7 +28,6 @@ import java.util.UUID;
 
 import static com.hazelcast.jet.aggregate.AggregateOperations.counting;
 import static com.hazelcast.jet.benchmark.trademonitor.RealTimeTradeProducer.MessageType.BYTE;
-import static com.hazelcast.jet.function.Functions.wholeItem;
 import static com.hazelcast.jet.pipeline.WindowDefinition.sliding;
 import static java.lang.Long.max;
 import static java.lang.System.currentTimeMillis;
@@ -75,19 +74,19 @@ public class JetTradeMonitor {
         int sinkParallelism = Integer.parseInt(args[10]);
         MessageType messageType = MessageType.valueOf(args[11].toUpperCase());
         logger.info(String.format("" +
-                "Starting Jet Trade Monitor with the following parameters:%n" +
-                "Kafka broker URI            %s%n" +
-                "Kafka topic                 %s%n" +
-                "Auto-reset message offset?  %s%n" +
-                "Allowed lag                 %s ms%n" +
-                "Sliding window size         %s ms%n" +
-                "Slide by                    %s ms%n" +
-                "Snapshot interval           %s ms%n" +
-                "Processing guarantee        %s%n" +
-                "Output path                 %s%n" +
-                "Source local parallelism    %s%n" +
-                "Sink local parallelism      %s%n" +
-                "Message type                %s%n",
+                        "Starting Jet Trade Monitor with the following parameters:%n" +
+                        "Kafka broker URI            %s%n" +
+                        "Kafka topic                 %s%n" +
+                        "Auto-reset message offset?  %s%n" +
+                        "Allowed lag                 %s ms%n" +
+                        "Sliding window size         %s ms%n" +
+                        "Slide by                    %s ms%n" +
+                        "Snapshot interval           %s ms%n" +
+                        "Processing guarantee        %s%n" +
+                        "Output path                 %s%n" +
+                        "Source local parallelism    %s%n" +
+                        "Sink local parallelism      %s%n" +
+                        "Message type                %s%n",
                 brokerUri, topic, offsetReset, lagMs, windowSize, slideBy, snapshotInterval,
                 guarantee, outputPath, kafkaParallelism, sinkParallelism, messageType
         ));
@@ -95,17 +94,15 @@ public class JetTradeMonitor {
         Properties kafkaProps = getKafkaProperties(brokerUri, offsetReset, messageType);
 
         Pipeline p = Pipeline.create();
-        StreamStage<Trade> sourceStage = (messageType == BYTE) 
+        StreamStage<Trade> sourceStage = (messageType == BYTE)
                 ? p.drawFrom(KafkaSources
-                    .kafka(kafkaProps, (ConsumerRecord<Object, byte[]> record) -> record.value(), topic))
-                    .withoutTimestamps()
-                    .mapUsingContext(
-                            ContextFactory.withCreateFn(jet -> new Deserializer()),
-                            Deserializer::deserialize)
-                    .addTimestamps(Trade::getTime, lagMs).setLocalParallelism(kafkaParallelism)
+                .kafka(kafkaProps, (ConsumerRecord<Object, byte[]> record) -> record.value(), topic))
+                   .withoutTimestamps()
+                   .mapUsingService(ServiceFactory.withCreateFn(jet -> new Deserializer()), Deserializer::deserialize)
+                   .addTimestamps(Trade::getTime, lagMs).setLocalParallelism(kafkaParallelism)
                 : p.drawFrom(KafkaSources
-                    .kafka(kafkaProps, (ConsumerRecord<Object, Trade> record) -> record.value(), topic))
-                    .withTimestamps(Trade::getTime, lagMs).setLocalParallelism(kafkaParallelism);
+                .kafka(kafkaProps, (ConsumerRecord<Object, Trade> record) -> record.value(), topic))
+                   .withTimestamps(Trade::getTime, lagMs).setLocalParallelism(kafkaParallelism);
         StreamStage<Long> aggregated = sourceStage
                 .groupingKey(Trade::getTicker)
                 .window(sliding(windowSize, slideBy))
@@ -116,7 +113,7 @@ public class JetTradeMonitor {
                 .drainTo(Sinks.logger(negLat -> "Negative latency: " + negLat));
         aggregated
                 .groupingKey(x -> 0L)
-                .mapUsingContext(ContextFactory.withCreateFn(x -> null), (ctx, key, it) -> it)
+                .mapUsingService(ServiceFactory.withCreateFn(x -> null), (ctx, key, it) -> it)
                 .drainTo(Sinks.files(outputPath)).setLocalParallelism(sinkParallelism);
 
         // uncomment one of the following lines

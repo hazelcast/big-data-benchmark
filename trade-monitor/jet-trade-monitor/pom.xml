@@ -7,7 +7,7 @@
     <parent>
         <groupId>com.hazelcast.jet.benchmark</groupId>
         <artifactId>trade-monitor</artifactId>
-        <version>3.2-SNAPSHOT</version>
+        <version>4.0-SNAPSHOT</version>
     </parent>
 
     <build>
@@ -48,6 +48,10 @@
     </build>
 
     <dependencies>
+        <dependency>
+            <groupId>com.hazelcast.jet</groupId>
+            <artifactId>hazelcast-jet</artifactId>
+        </dependency>
         <dependency>
             <groupId>com.hazelcast.jet</groupId>
             <artifactId>hazelcast-jet-kafka</artifactId>

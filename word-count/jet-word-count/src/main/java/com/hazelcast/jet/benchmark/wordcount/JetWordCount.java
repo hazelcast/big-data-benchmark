@@ -16,9 +16,9 @@ import org.apache.hadoop.mapred.TextOutputFormat;
 import java.util.Map;
 import java.util.StringTokenizer;
 
+import static com.hazelcast.function.Functions.entryValue;
+import static com.hazelcast.function.Functions.wholeItem;
 import static com.hazelcast.jet.aggregate.AggregateOperations.counting;
-import static com.hazelcast.jet.function.Functions.entryValue;
-import static com.hazelcast.jet.function.Functions.wholeItem;
 
 public class JetWordCount {
 
