@@ -27,11 +27,11 @@ public class JetMapWordCount {
         String sinkMap = sourceMap + "-out";
 
         Pipeline p = Pipeline.create();
-        p.drawFrom(Sources.<Object, String>map(sourceMap))
+        p.readFrom(Sources.<Object, String>map(sourceMap))
          .flatMap(entry -> traverseEnumeration(new StringTokenizer(entry.getValue())))
          .groupingKey(wholeItem())
          .aggregate(counting())
-         .drainTo(Sinks.map(sinkMap));
+         .writeTo(Sinks.map(sinkMap));
 
         JobConfig config = new JobConfig();
         config.addClass(JetMapWordCount.class);

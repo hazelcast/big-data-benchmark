@@ -95,12 +95,12 @@ public class JetTradeMonitor {
 
         Pipeline p = Pipeline.create();
         StreamStage<Trade> sourceStage = (messageType == BYTE)
-                ? p.drawFrom(KafkaSources
+                ? p.readFrom(KafkaSources
                 .kafka(kafkaProps, (ConsumerRecord<Object, byte[]> record) -> record.value(), topic))
                    .withoutTimestamps()
                    .mapUsingService(ServiceFactory.withCreateFn(jet -> new Deserializer()), Deserializer::deserialize)
                    .addTimestamps(Trade::getTime, lagMs).setLocalParallelism(kafkaParallelism)
-                : p.drawFrom(KafkaSources
+                : p.readFrom(KafkaSources
                 .kafka(kafkaProps, (ConsumerRecord<Object, Trade> record) -> record.value(), topic))
                    .withTimestamps(Trade::getTime, lagMs).setLocalParallelism(kafkaParallelism);
         StreamStage<Long> aggregated = sourceStage
@@ -110,11 +110,11 @@ public class JetTradeMonitor {
                 .map(kwr -> currentTimeMillis() - kwr.end() - lagMs);
         aggregated
                 .filter(latency -> latency < 0)
-                .drainTo(Sinks.logger(negLat -> "Negative latency: " + negLat));
+                .writeTo(Sinks.logger(negLat -> "Negative latency: " + negLat));
         aggregated
                 .groupingKey(x -> 0L)
                 .mapUsingService(ServiceFactory.withCreateFn(x -> null), (ctx, key, it) -> it)
-                .drainTo(Sinks.files(outputPath)).setLocalParallelism(sinkParallelism);
+                .writeTo(Sinks.files(outputPath)).setLocalParallelism(sinkParallelism);
 
         // uncomment one of the following lines
 //        JetInstance jet = Jet.newJetInstance(); // uncomment for local execution
