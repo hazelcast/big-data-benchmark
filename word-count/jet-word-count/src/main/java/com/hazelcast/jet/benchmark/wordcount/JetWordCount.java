@@ -45,14 +45,14 @@ public class JetWordCount {
         TextOutputFormat.setOutputPath(conf, new Path(outputPath));
 
         Pipeline p = Pipeline.create();
-        p.drawFrom(HdfsSources.hdfs(conf, (k, v) -> v.toString()))
+        p.readFrom(HdfsSources.hdfs(conf, (k, v) -> v.toString()))
          .flatMap((String line) -> {
              StringTokenizer s = new StringTokenizer(line);
              return () -> s.hasMoreTokens() ? s.nextToken() : null;
          })
          .groupingKey(wholeItem())
          .aggregate(counting())
-         .drainTo(HdfsSinks.hdfs(conf, Map.Entry::getKey, entryValue()));
+         .writeTo(HdfsSinks.hdfs(conf, Map.Entry::getKey, entryValue()));
 
         JobConfig config = new JobConfig();
         config.addClass(JetWordCount.class);

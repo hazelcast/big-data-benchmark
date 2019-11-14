@@ -71,9 +71,9 @@ public class HdfsToMap {
 
         Pipeline p = Pipeline.create();
 
-        p.drawFrom(HdfsSources.<LongWritable, Text>hdfs(conf)).setLocalParallelism(parallelism)
+        p.readFrom(HdfsSources.<LongWritable, Text>hdfs(conf)).setLocalParallelism(parallelism)
          .map(e -> entry(e.getKey().get(), e.getValue().toString())).setLocalParallelism(parallelism)
-         .drainTo(Sinks.map(name)).setLocalParallelism(parallelism);
+         .writeTo(Sinks.map(name)).setLocalParallelism(parallelism);
 
         JobConfig jobConfig = new JobConfig();
         jobConfig.addClass(HdfsToMap.class);
