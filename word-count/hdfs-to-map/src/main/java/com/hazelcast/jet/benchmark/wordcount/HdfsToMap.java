@@ -18,7 +18,7 @@ package com.hazelcast.jet.benchmark.wordcount;
 
 import com.hazelcast.jet.JetInstance;
 import com.hazelcast.jet.config.JobConfig;
-import com.hazelcast.jet.hadoop.HdfsSources;
+import com.hazelcast.jet.hadoop.HadoopSources;
 import com.hazelcast.jet.pipeline.Pipeline;
 import com.hazelcast.jet.pipeline.Sinks;
 import com.hazelcast.jet.server.JetBootstrap;
@@ -71,7 +71,7 @@ public class HdfsToMap {
 
         Pipeline p = Pipeline.create();
 
-        p.readFrom(HdfsSources.<LongWritable, Text>hdfs(conf)).setLocalParallelism(parallelism)
+        p.readFrom(HadoopSources.<LongWritable, Text>inputFormat(conf)).setLocalParallelism(parallelism)
          .map(e -> entry(e.getKey().get(), e.getValue().toString())).setLocalParallelism(parallelism)
          .writeTo(Sinks.map(name)).setLocalParallelism(parallelism);
 

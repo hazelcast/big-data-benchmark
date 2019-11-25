@@ -2,8 +2,8 @@ package com.hazelcast.jet.benchmark.wordcount;
 
 import com.hazelcast.jet.JetInstance;
 import com.hazelcast.jet.config.JobConfig;
-import com.hazelcast.jet.hadoop.HdfsSinks;
-import com.hazelcast.jet.hadoop.HdfsSources;
+import com.hazelcast.jet.hadoop.HadoopSinks;
+import com.hazelcast.jet.hadoop.HadoopSources;
 import com.hazelcast.jet.pipeline.Pipeline;
 import com.hazelcast.jet.server.JetBootstrap;
 import org.apache.hadoop.fs.LocalFileSystem;
@@ -45,14 +45,14 @@ public class JetWordCount {
         TextOutputFormat.setOutputPath(conf, new Path(outputPath));
 
         Pipeline p = Pipeline.create();
-        p.readFrom(HdfsSources.hdfs(conf, (k, v) -> v.toString()))
+        p.readFrom(HadoopSources.inputFormat(conf, (k, v) -> v.toString()))
          .flatMap((String line) -> {
              StringTokenizer s = new StringTokenizer(line);
              return () -> s.hasMoreTokens() ? s.nextToken() : null;
          })
          .groupingKey(wholeItem())
          .aggregate(counting())
-         .writeTo(HdfsSinks.hdfs(conf, Map.Entry::getKey, entryValue()));
+         .writeTo(HadoopSinks.outputFormat(conf, Map.Entry::getKey, entryValue()));
 
         JobConfig config = new JobConfig();
         config.addClass(JetWordCount.class);
