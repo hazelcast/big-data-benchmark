@@ -1,5 +1,6 @@
 package com.hazelcast.jet.benchmark.trademonitor;
 
+import com.hazelcast.function.ConsumerEx;
 import com.hazelcast.jet.JetInstance;
 import com.hazelcast.jet.aggregate.AggregateOperation;
 import com.hazelcast.jet.aggregate.AggregateOperation1;
@@ -8,7 +9,6 @@ import com.hazelcast.jet.config.JobConfig;
 import com.hazelcast.jet.config.ProcessingGuarantee;
 import com.hazelcast.jet.kafka.KafkaSources;
 import com.hazelcast.jet.pipeline.Pipeline;
-import com.hazelcast.jet.pipeline.ServiceFactory;
 import com.hazelcast.jet.pipeline.Sinks;
 import com.hazelcast.jet.pipeline.StreamStage;
 import com.hazelcast.jet.server.JetBootstrap;
@@ -28,6 +28,7 @@ import java.util.UUID;
 
 import static com.hazelcast.jet.aggregate.AggregateOperations.counting;
 import static com.hazelcast.jet.benchmark.trademonitor.RealTimeTradeProducer.MessageType.BYTE;
+import static com.hazelcast.jet.pipeline.ServiceFactories.sharedService;
 import static com.hazelcast.jet.pipeline.WindowDefinition.sliding;
 import static java.lang.Long.max;
 import static java.lang.System.currentTimeMillis;
@@ -98,7 +99,8 @@ public class JetTradeMonitor {
                 ? p.readFrom(KafkaSources
                 .kafka(kafkaProps, (ConsumerRecord<Object, byte[]> record) -> record.value(), topic))
                    .withoutTimestamps()
-                   .mapUsingService(ServiceFactory.withCreateFn(jet -> new Deserializer()), Deserializer::deserialize)
+                   .mapUsingService(
+                           sharedService(() -> new Deserializer(), ConsumerEx.noop()), Deserializer::deserialize)
                    .addTimestamps(Trade::getTime, lagMs).setLocalParallelism(kafkaParallelism)
                 : p.readFrom(KafkaSources
                 .kafka(kafkaProps, (ConsumerRecord<Object, Trade> record) -> record.value(), topic))
@@ -113,7 +115,7 @@ public class JetTradeMonitor {
                 .writeTo(Sinks.logger(negLat -> "Negative latency: " + negLat));
         aggregated
                 .groupingKey(x -> 0L)
-                .mapUsingService(ServiceFactory.withCreateFn(x -> null), (ctx, key, it) -> it)
+                .mapUsingService(sharedService(() -> null, ConsumerEx.noop()), (ctx, key, it) -> it)
                 .writeTo(Sinks.files(outputPath)).setLocalParallelism(sinkParallelism);
 
         // uncomment one of the following lines
