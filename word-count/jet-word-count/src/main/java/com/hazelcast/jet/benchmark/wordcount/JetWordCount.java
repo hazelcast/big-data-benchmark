@@ -1,11 +1,11 @@
 package com.hazelcast.jet.benchmark.wordcount;
 
+import com.hazelcast.jet.Jet;
 import com.hazelcast.jet.JetInstance;
 import com.hazelcast.jet.config.JobConfig;
 import com.hazelcast.jet.hadoop.HadoopSinks;
 import com.hazelcast.jet.hadoop.HadoopSources;
 import com.hazelcast.jet.pipeline.Pipeline;
-import com.hazelcast.jet.server.JetBootstrap;
 import org.apache.hadoop.fs.LocalFileSystem;
 import org.apache.hadoop.fs.Path;
 import org.apache.hadoop.hdfs.DistributedFileSystem;
@@ -29,7 +29,7 @@ public class JetWordCount {
             return;
         }
 
-        JetInstance client = JetBootstrap.getInstance();
+        JetInstance client = Jet.bootstrappedInstance();
 
         String hdfsUri = args[0];
         String inputPath = args[1];
