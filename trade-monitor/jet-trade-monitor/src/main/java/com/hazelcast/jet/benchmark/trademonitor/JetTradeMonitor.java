@@ -1,6 +1,7 @@
 package com.hazelcast.jet.benchmark.trademonitor;
 
 import com.hazelcast.function.ConsumerEx;
+import com.hazelcast.jet.Jet;
 import com.hazelcast.jet.JetInstance;
 import com.hazelcast.jet.aggregate.AggregateOperation;
 import com.hazelcast.jet.aggregate.AggregateOperation1;
@@ -11,7 +12,6 @@ import com.hazelcast.jet.kafka.KafkaSources;
 import com.hazelcast.jet.pipeline.Pipeline;
 import com.hazelcast.jet.pipeline.Sinks;
 import com.hazelcast.jet.pipeline.StreamStage;
-import com.hazelcast.jet.server.JetBootstrap;
 import org.HdrHistogram.Histogram;
 import org.apache.kafka.clients.consumer.ConsumerRecord;
 import org.apache.kafka.common.serialization.ByteArrayDeserializer;
@@ -120,7 +120,7 @@ public class JetTradeMonitor {
 
         // uncomment one of the following lines
 //        JetInstance jet = Jet.newJetInstance(); // uncomment for local execution
-        JetInstance jet = JetBootstrap.getInstance(); // uncomment for execution using jet-submit.sh
+        JetInstance jet = Jet.bootstrappedInstance(); // uncomment for execution using jet-submit.sh
 
         System.out.println("Executing job..");
         JobConfig config = new JobConfig();

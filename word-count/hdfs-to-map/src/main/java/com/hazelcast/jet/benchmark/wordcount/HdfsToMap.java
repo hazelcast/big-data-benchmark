@@ -16,12 +16,12 @@
 
 package com.hazelcast.jet.benchmark.wordcount;
 
+import com.hazelcast.jet.Jet;
 import com.hazelcast.jet.JetInstance;
 import com.hazelcast.jet.config.JobConfig;
 import com.hazelcast.jet.hadoop.HadoopSources;
 import com.hazelcast.jet.pipeline.Pipeline;
 import com.hazelcast.jet.pipeline.Sinks;
-import com.hazelcast.jet.server.JetBootstrap;
 import com.hazelcast.map.IMap;
 import org.apache.hadoop.fs.LocalFileSystem;
 import org.apache.hadoop.fs.Path;
@@ -47,7 +47,7 @@ public class HdfsToMap {
         String inputPath = args[2];
         int parallelism = parseInt(args[3]);
 
-        JetInstance client = JetBootstrap.getInstance();
+        JetInstance client = Jet.bootstrappedInstance();
         IMap<Long, String> map = client.getMap(name);
         map.clear();
 
