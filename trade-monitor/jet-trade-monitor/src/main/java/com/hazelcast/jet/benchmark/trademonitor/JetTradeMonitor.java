@@ -1,6 +1,5 @@
 package com.hazelcast.jet.benchmark.trademonitor;
 
-import com.hazelcast.function.ConsumerEx;
 import com.hazelcast.jet.Jet;
 import com.hazelcast.jet.JetInstance;
 import com.hazelcast.jet.aggregate.AggregateOperation;
@@ -100,7 +99,7 @@ public class JetTradeMonitor {
                 .kafka(kafkaProps, (ConsumerRecord<Object, byte[]> record) -> record.value(), topic))
                    .withoutTimestamps()
                    .mapUsingService(
-                           sharedService(() -> new Deserializer(), ConsumerEx.noop()), Deserializer::deserialize)
+                           sharedService(ctx -> new Deserializer()), Deserializer::deserialize)
                    .addTimestamps(Trade::getTime, lagMs).setLocalParallelism(kafkaParallelism)
                 : p.readFrom(KafkaSources
                 .kafka(kafkaProps, (ConsumerRecord<Object, Trade> record) -> record.value(), topic))
@@ -115,7 +114,7 @@ public class JetTradeMonitor {
                 .writeTo(Sinks.logger(negLat -> "Negative latency: " + negLat));
         aggregated
                 .groupingKey(x -> 0L)
-                .mapUsingService(sharedService(() -> null, ConsumerEx.noop()), (ctx, key, it) -> it)
+                .mapUsingService(sharedService(ctx -> null), (ctx, key, it) -> it)
                 .writeTo(Sinks.files(outputPath)).setLocalParallelism(sinkParallelism);
 
         // uncomment one of the following lines
