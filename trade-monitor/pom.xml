@@ -6,7 +6,7 @@
     <parent>
         <artifactId>big-data-benchmark</artifactId>
         <groupId>com.hazelcast.jet.benchmark</groupId>
-        <version>4.2-SNAPSHOT</version>
+        <version>4.3-SNAPSHOT</version>
     </parent>
     <packaging>pom</packaging>
     <artifactId>trade-monitor</artifactId>
