@@ -9,7 +9,7 @@
     <parent>
         <artifactId>word-count</artifactId>
         <groupId>com.hazelcast.jet.benchmark</groupId>
-        <version>4.3-SNAPSHOT</version>
+        <version>4.2-SNAPSHOT</version>
     </parent>
 
     <build>
