@@ -68,7 +68,7 @@ public class TradeProducer implements AutoCloseable {
                         long totalElapsed = batchEnd - start;
                         long batchRate = (long) ((double) tradesPerSecond / batchElapsed * SEC_TO_NANOS);
                         long totalRate = (long) ((double) totalProduced.get() / totalElapsed * SEC_TO_NANOS);
-                        System.out.printf("Producer %d: Produced %,d records. Producer rate: %,d records/s%n",
+                        System.out.printf("Producer %d: Produced %,d records in %,d ms Producer rate: %,d records/s%n",
                                 producerIdx, producerProduced,
                                 TimeUnit.NANOSECONDS.toMillis(totalElapsed), batchRate);
                         System.out.printf("Aggregate: Produced %,d records. Total rate: %,d records/s%n",

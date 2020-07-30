@@ -52,14 +52,14 @@ public class JetTradeMonitor {
             System.err.println("Usage:");
             System.err.println("  " + JetTradeMonitor.class.getSimpleName() +
                     " <bootstrap.servers> <topic> <offset-reset> <maxLagMs> <windowSizeMs> <slideByMs>" +
-                    " <snapshotIntervalMs> <processingGuarantee> <outputPath> <latencyType> <kafkaParallelism>" +
+                    " <snapshotIntervalMs> <processingGuarantee> <outputPath> <kafkaParallelism>" +
                     " <sinkParallelism> <messageType>");
             System.err.println();
             System.err.println("<processingGuarantee> - \"none\" or \"exactly-once\" or \"at-least-once\"");
             System.err.println("<messageType> - byte|object");
             System.exit(1);
         }
-        System.setProperty("hazelcast.logging.type", "log4j");
+        System.setProperty("hazelcast.logging.type", "log4j2");
         Logger logger = Logger.getLogger(JetTradeMonitor.class);
         String brokerUri = args[0];
         String topic = args[1];
@@ -117,12 +117,11 @@ public class JetTradeMonitor {
                 .mapUsingService(sharedService(ctx -> null), (ctx, key, it) -> it)
                 .writeTo(Sinks.files(outputPath)).setLocalParallelism(sinkParallelism);
 
-        // uncomment one of the following lines
-//        JetInstance jet = Jet.newJetInstance(); // uncomment for local execution
         JetInstance jet = Jet.bootstrappedInstance(); // uncomment for execution using jet-submit.sh
 
         System.out.println("Executing job..");
         JobConfig config = new JobConfig();
+        config.setName("JetTradeMonitor");
         config.setSnapshotIntervalMillis(snapshotInterval);
         config.setProcessingGuarantee(guarantee);
         jet.newJob(p, config).join();
