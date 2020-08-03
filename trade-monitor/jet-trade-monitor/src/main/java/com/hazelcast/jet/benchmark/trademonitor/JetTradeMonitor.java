@@ -2,6 +2,7 @@ package com.hazelcast.jet.benchmark.trademonitor;
 
 import com.hazelcast.jet.Jet;
 import com.hazelcast.jet.JetInstance;
+import com.hazelcast.jet.Job;
 import com.hazelcast.jet.aggregate.AggregateOperation;
 import com.hazelcast.jet.aggregate.AggregateOperation1;
 import com.hazelcast.jet.benchmark.trademonitor.RealTimeTradeProducer.MessageType;
@@ -33,18 +34,6 @@ import static java.lang.Long.max;
 import static java.lang.System.currentTimeMillis;
 
 public class JetTradeMonitor {
-
-    private static final AggregateOperation1<Long, Histogram, String> latencyProfile = AggregateOperation
-            .withCreate(() -> new Histogram(5))
-            .<Long>andAccumulate((histogram, latencyMs) -> histogram.recordValue(max(0, latencyMs)))
-            .andCombine(Histogram::add)
-            .andExportFinish(histogram -> {
-                ByteArrayOutputStream bos = new ByteArrayOutputStream();
-                PrintStream out = new PrintStream(bos);
-                histogram.outputPercentileDistribution(out, 1.0);
-                out.close();
-                return bos.toString();
-            });
 
     public static void main(String[] args) {
         System.out.println("Arguments: " + Arrays.toString(args));
@@ -93,15 +82,14 @@ public class JetTradeMonitor {
 
         Properties kafkaProps = getKafkaProperties(brokerUri, offsetReset, messageType);
 
-        Pipeline p = Pipeline.create();
+        Pipeline pipeline = Pipeline.create();
         StreamStage<Trade> sourceStage = (messageType == BYTE)
-                ? p.readFrom(KafkaSources
+                ? pipeline.readFrom(KafkaSources
                 .kafka(kafkaProps, (ConsumerRecord<Object, byte[]> record) -> record.value(), topic))
                    .withoutTimestamps()
-                   .mapUsingService(
-                           sharedService(ctx -> new Deserializer()), Deserializer::deserialize)
+                   .mapUsingService(sharedService(ctx -> new Deserializer()), Deserializer::deserialize)
                    .addTimestamps(Trade::getTime, lagMs).setLocalParallelism(kafkaParallelism)
-                : p.readFrom(KafkaSources
+                : pipeline.readFrom(KafkaSources
                 .kafka(kafkaProps, (ConsumerRecord<Object, Trade> record) -> record.value(), topic))
                    .withTimestamps(Trade::getTime, lagMs).setLocalParallelism(kafkaParallelism);
         StreamStage<Long> aggregated = sourceStage
@@ -117,14 +105,16 @@ public class JetTradeMonitor {
                 .mapUsingService(sharedService(ctx -> null), (ctx, key, it) -> it)
                 .writeTo(Sinks.files(outputPath)).setLocalParallelism(sinkParallelism);
 
-        JetInstance jet = Jet.bootstrappedInstance(); // uncomment for execution using jet-submit.sh
-
         System.out.println("Executing job..");
         JobConfig config = new JobConfig();
         config.setName("JetTradeMonitor");
         config.setSnapshotIntervalMillis(snapshotInterval);
         config.setProcessingGuarantee(guarantee);
-        jet.newJob(p, config).join();
+
+        JetInstance jet = Jet.bootstrappedInstance();
+        Job job = jet.newJob(pipeline, config);
+        Runtime.getRuntime().addShutdownHook(new Thread(job::cancel));
+        job.join();
     }
 
     private static Properties getKafkaProperties(String brokerUrl, String offsetReset, MessageType messageType) {
