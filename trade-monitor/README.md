@@ -7,19 +7,19 @@ and Apache Spark Streaming.
 
 ## How to Run the Benchmarks
 
-All the benchmarks begin with these common steps:
+All benchmarks begin with these common steps:
 
-Apache Kafka cluster up and running
-See [Kafka documentation](https://kafka.apache.org/documentation/)
+1. Start Apache Kafka, see the [Kafka
+   documentation](https://kafka.apache.org/documentation/)
 
-1. Build the benchmark
+2. Build the benchmarking code:
 
 ```bash
-$ cd /your/path/to/big-data-benchmark
+$ cd /path/to/big-data-benchmark
 $ mvn package -pl trade-monitor/kafka-trade-producer -am
 ```
 
-2. Start the kafka producer
+3. Start the program that produces events to Kafka:
 
 ```bash
 $ cd trade-monitor/kafka-trade-producer
@@ -39,17 +39,25 @@ The meaning of parameters:
 
 ## Jet benchmark
 
-1. Start the Jet cluster, see the [Jet
-documentation](https://jet-start.sh/docs/operations/installation).
+1. Download and unzip the Hazelcast Jet distribution package, see
+   [Jet
+   documentation](https://jet-start.sh/docs/operations/installation).
 
 2. Build the Pipeline JAR and copy to the `lib` folder on all Jet nodes.
 Here we copy it to the local Jet installation:
 
 ```bash
-$ cd /your/path/to/big-data-benchmark
+$ cd /path/to/big-data-benchmark
 $ mvn package -pl trade-monitor/jet-trade-monitor -am
 $ cp trade-monitor/jet-trade-monitor/target/jet-trade-monitor-4.3-SNAPSHOT.jar \
 /path/to/hazelcast-jet/lib
+```
+
+3. Start a Jet node:
+
+```bash
+$ cd /path/to/hazelcast-jet
+$ bin/jet-start
 ```
 
 3. Submit the job
