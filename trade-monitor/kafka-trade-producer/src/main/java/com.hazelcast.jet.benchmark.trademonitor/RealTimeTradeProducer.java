@@ -12,7 +12,6 @@ import java.util.Arrays;
 import java.util.Properties;
 import java.util.concurrent.ExecutorService;
 import java.util.concurrent.Executors;
-import java.util.concurrent.TimeUnit;
 import java.util.concurrent.locks.LockSupport;
 
 import static java.util.concurrent.TimeUnit.MICROSECONDS;
@@ -20,22 +19,24 @@ import static java.util.concurrent.TimeUnit.NANOSECONDS;
 import static java.util.concurrent.TimeUnit.SECONDS;
 
 public class RealTimeTradeProducer implements Runnable {
-
     public enum MessageType {
         BYTE,
         OBJECT
     }
 
-    private static final int BATCH_SIZE = 1_024;
+    private static final int BATCH_SIZE = 256;
     private static final long NANOS_PER_SECOND = SECONDS.toNanos(1);
     private static final long REPORT_PERIOD_SECONDS = 2;
 
     private final int producerIndex;
     private final String topic;
-    private final int tradesPerSecond;
+    private final double tradesPerNanosecond;
+    private final long nanoTimeMillisToCurrentTimeMillis;
     private final String[] tickers;
     private final KafkaProducer<Long, Object> producer;
     private final MessageType messageType;
+    private final ByteArrayOutputStream baos = new ByteArrayOutputStream();
+    private final DataOutputStream oos = new DataOutputStream(baos);
 
     private long startNanoTime;
     private int tickerIndex;
@@ -47,19 +48,23 @@ public class RealTimeTradeProducer implements Runnable {
 
 
     private RealTimeTradeProducer(
-            int producerIndex, String broker, String topic, int tradesPerSecond,
-            int keysFrom, int keysTo, MessageType messageType
+            int producerIndex, String broker, String topic, double tradesPerSecond,
+            int keysPerProducer, MessageType messageType, long nanoTimeMillisToCurrentTimeMillis
     ) {
         if (tradesPerSecond <= 0) {
             throw new RuntimeException("tradesPerSecond=" + tradesPerSecond);
         }
         this.producerIndex = producerIndex;
         this.topic = topic;
-        this.tradesPerSecond = tradesPerSecond;
+        this.tradesPerNanosecond = tradesPerSecond / NANOS_PER_SECOND;
         this.messageType = messageType;
+        this.nanoTimeMillisToCurrentTimeMillis = nanoTimeMillisToCurrentTimeMillis;
 
+        int keysFrom = keysPerProducer * producerIndex;
+        int keysTo = keysPerProducer * (producerIndex + 1);
         tickers = new String[keysTo - keysFrom];
-        Arrays.setAll(tickers, i -> "T-" + (i + keysFrom));
+        Arrays.setAll(tickers, i -> "T-" + (keysFrom + i));
+
         Properties props = new Properties();
         props.setProperty("bootstrap.servers", broker);
         props.setProperty("key.serializer", LongSerializer.class.getName());
@@ -73,14 +78,14 @@ public class RealTimeTradeProducer implements Runnable {
             default:
                 throw new RuntimeException("Missing implementation for message type " + messageType);
         }
-        this.producer = new KafkaProducer<>(props);
+        producer = new KafkaProducer<>(props);
     }
 
     public static void main(String[] args) {
         if (args.length != 6) {
             System.err.println("Usage:");
-            System.err.println("  " + RealTimeTradeProducer.class.getSimpleName()
-                    + " <bootstrap.servers> <topic> <num producers> <trades per second>" +
+            System.err.println("  " + RealTimeTradeProducer.class.getSimpleName() +
+                    " <bootstrap.servers> <topic> <num producers> <trades per second>" +
                     " <num distinct keys> <messageType>");
             System.err.println();
             System.err.println("<messageType> - byte|object");
@@ -88,99 +93,81 @@ public class RealTimeTradeProducer implements Runnable {
         }
         String broker = args[0];
         String topic = args[1];
-        int numProducers = Integer.parseInt(args[2].replace("_", ""));
-        int tradesPerSecond = Integer.parseInt(args[3].replace("_", ""));
-        int numDistinctKeys = Integer.parseInt(args[4].replace("_", ""));
+        int numProducers = parseIntArg(args[2]);
+        int tradesPerSecond = parseIntArg(args[3]);
+        int numDistinctKeys = parseIntArg(args[4]);
         MessageType messageType = MessageType.valueOf(args[5].toUpperCase());
 
+        if (tradesPerSecond < 1) {
+            System.err.println("<trades per second> must be positive, but got " + tradesPerSecond);
+            System.exit(1);
+        }
         int keysPerProducer = numDistinctKeys / numProducers;
-        int tradesPerSecondPerProducer = tradesPerSecond / numProducers;
-        if (keysPerProducer * numProducers *100 / numDistinctKeys < 99) {
-            System.err.println("<num distinct keys> not divisible by <num producers> and error is >1%");
+        double tradesPerSecondPerProducer = (double) tradesPerSecond / numProducers;
+        if (keysPerProducer * numProducers * 100 / numDistinctKeys < 99) {
+            System.err.println("<num distinct keys> not divisible by <num producers> and the error is >1%");
             System.exit(1);
         }
-        if (tradesPerSecondPerProducer * numProducers *100 / tradesPerSecond < 99) {
-            System.err.println("<trades per second> not divisible by <num producers> and error is >1%");
-            System.exit(1);
-        }
+
         ExecutorService executorService = Executors.newFixedThreadPool(numProducers);
+        long nanoTimeMillisToCurrentTimeMillis = determineTimeOffset();
         for (int i = 0; i < numProducers; i++) {
             RealTimeTradeProducer tradeProducer = new RealTimeTradeProducer(i, broker, topic,
-                    tradesPerSecondPerProducer, keysPerProducer * i, keysPerProducer * (i + 1), messageType);
+                    tradesPerSecondPerProducer, keysPerProducer, messageType, nanoTimeMillisToCurrentTimeMillis);
             executorService.submit(tradeProducer);
         }
     }
 
+    private static int parseIntArg(String arg) {
+        return Integer.parseInt(arg.replace("_", ""));
+    }
+
     @Override
     public void run() {
-        if (tradesPerSecond == -1) {
-            runNonThrottled();
-            return; // should never be reached
-        }
-        final ByteArrayOutputStream baos = new ByteArrayOutputStream();
-        final DataOutputStream oos = new DataOutputStream(baos);
-        final long nanoTimeMillisToCurrentTimeMillis = determineTimeOffset();
-
         startNanoTime = System.nanoTime();
         lastReportNanoTime = startNanoTime;
         while (true) {
             nowNanos = System.nanoTime();
-            reportThroughput();
-            final long expectedProduced = (nowNanos - startNanoTime) * tradesPerSecond / NANOS_PER_SECOND;
-            if (sleepIfAheadOfSchedule(expectedProduced)) {
-                continue;
+            long expectedProduced = (long) ((nowNanos - startNanoTime) * tradesPerNanosecond);
+            if (producedCount < expectedProduced) {
+                produceUntil(expectedProduced);
+                reportThroughput();
+            } else {
+                sleepUntilDue(expectedProduced + 1);
             }
-            for (int i = 0; producedCount < expectedProduced && i < BATCH_SIZE; i++) {
-                long timestampNanoTime = startNanoTime + producedCount * NANOS_PER_SECOND / tradesPerSecond;
-                long timestamp = NANOSECONDS.toMillis(timestampNanoTime) - nanoTimeMillisToCurrentTimeMillis;
-                send(baos, oos, topic, nextTrade(timestamp), messageType);
-                producedCount++;
-                latestTimestampNanoTime = timestampNanoTime;
-            }
+        }
+    }
+
+    private void sleepUntilDue(long expectedProduced) {
+        long due = startNanoTime + (long) (expectedProduced / tradesPerNanosecond);
+        long nanosUntilDue = due - nowNanos;
+        long sleepNanos = nanosUntilDue - MICROSECONDS.toNanos(10);
+        if (sleepNanos > 0) {
+            LockSupport.parkNanos(sleepNanos);
+        }
+    }
+
+    private void produceUntil(long expectedProduced) {
+        for (int i = 0; producedCount < expectedProduced && i < BATCH_SIZE; i++) {
+            long timestampNanoTime = startNanoTime + (long) (producedCount / tradesPerNanosecond);
+            long timestamp = NANOSECONDS.toMillis(timestampNanoTime) - nanoTimeMillisToCurrentTimeMillis;
+            send(baos, oos, topic, nextTrade(timestamp), messageType);
+            producedCount++;
+            latestTimestampNanoTime = timestampNanoTime;
         }
     }
 
     private void reportThroughput() {
         final long nanosSinceLastReport = nowNanos - lastReportNanoTime;
-        if (NANOSECONDS.toSeconds(nanosSinceLastReport) >= REPORT_PERIOD_SECONDS) {
-            System.out.printf("Producer %2d: topic '%s', %,.0f events/second, %,d ms behind real time%n",
-                    producerIndex, topic,
-                    (double) NANOS_PER_SECOND * (producedCount - producedAtLastReport) / nanosSinceLastReport,
-                    NANOSECONDS.toMillis(nowNanos - latestTimestampNanoTime));
-            producedAtLastReport = producedCount;
-            lastReportNanoTime = nowNanos;
+        if (NANOSECONDS.toSeconds(nanosSinceLastReport) < REPORT_PERIOD_SECONDS) {
+            return;
         }
-    }
-
-    private boolean sleepIfAheadOfSchedule(long expectedProduced) {
-        if (expectedProduced == producedCount) {
-            long nextSchedule = startNanoTime + (producedCount + 1) * NANOS_PER_SECOND / tradesPerSecond;
-            long nanosLeftToNextEvent = nextSchedule - nowNanos;
-            long sleepNanos = nanosLeftToNextEvent - MICROSECONDS.toNanos(10);
-            if (sleepNanos > 0) {
-                LockSupport.parkNanos(sleepNanos);
-                return true;
-            }
-        }
-        return false;
-    }
-
-    private void runNonThrottled() {
-        final ByteArrayOutputStream baos = new ByteArrayOutputStream();
-        final DataOutputStream oos = new DataOutputStream(baos);
-
-        long start = System.nanoTime();
-        long produced = 0;
-        while (true) {
-            for (int i = 0; i < BATCH_SIZE; i++) {
-                send(baos, oos, topic, nextTrade(System.currentTimeMillis()), messageType);
-            }
-            produced += BATCH_SIZE;
-
-            long elapsed = System.nanoTime() - start;
-            double rate = produced / (double) TimeUnit.NANOSECONDS.toSeconds(elapsed);
-            System.out.println(producerIndex + ": Produced: " + rate + " trades/sec");
-        }
+        System.out.printf("Producer %2d: topic '%s', %,.0f events/second, %,d ms behind real time%n",
+                producerIndex, topic,
+                (double) NANOS_PER_SECOND * (producedCount - producedAtLastReport) / nanosSinceLastReport,
+                NANOSECONDS.toMillis(nowNanos - latestTimestampNanoTime));
+        producedAtLastReport = producedCount;
+        lastReportNanoTime = nowNanos;
     }
 
     private Trade nextTrade(long time) {
