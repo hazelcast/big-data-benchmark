@@ -18,7 +18,7 @@
                 <configuration>
                     <archive>
                         <manifest>
-                            <mainClass>com.hazelcast.jet.benchmark.trademonitor.RealTimeTradeProducer</mainClass>
+                            <mainClass>com.hazelcast.jet.benchmark.trademonitor.KafkaTradeProducer</mainClass>
                         </manifest>
                     </archive>
                 </configuration>

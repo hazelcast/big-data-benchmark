@@ -15,22 +15,24 @@ import java.util.concurrent.Executors;
 import java.util.concurrent.locks.LockSupport;
 
 import static java.util.concurrent.TimeUnit.MICROSECONDS;
+import static java.util.concurrent.TimeUnit.MILLISECONDS;
 import static java.util.concurrent.TimeUnit.NANOSECONDS;
 import static java.util.concurrent.TimeUnit.SECONDS;
 
-public class RealTimeTradeProducer implements Runnable {
+public class KafkaTradeProducer implements Runnable {
     public enum MessageType {
         BYTE,
         OBJECT
     }
 
+    public static final String KAFKA_TOPIC = "trades";
     private static final int BATCH_SIZE = 256;
     private static final long NANOS_PER_SECOND = SECONDS.toNanos(1);
     private static final long REPORT_PERIOD_SECONDS = 2;
 
     private final int producerIndex;
-    private final String topic;
     private final double tradesPerNanosecond;
+    private final long startNanoTime;
     private final long nanoTimeMillisToCurrentTimeMillis;
     private final String[] tickers;
     private final KafkaProducer<Long, Object> producer;
@@ -38,26 +40,26 @@ public class RealTimeTradeProducer implements Runnable {
     private final ByteArrayOutputStream baos = new ByteArrayOutputStream();
     private final DataOutputStream oos = new DataOutputStream(baos);
 
-    private long startNanoTime;
     private int tickerIndex;
-    private long producedCount = 0;
     private long lastReportNanoTime;
     private long nowNanos;
-    private long producedAtLastReport = 0;
-    private long latestTimestampNanoTime = 0;
+    private long producedCount;
+    private long producedAtLastReport;
+    private long latestTimestampNanoTime;
 
 
-    private RealTimeTradeProducer(
-            int producerIndex, String broker, String topic, double tradesPerSecond,
-            int keysPerProducer, MessageType messageType, long nanoTimeMillisToCurrentTimeMillis
+    private KafkaTradeProducer(
+            int producerIndex, int producerCount, String broker, double tradesPerSecond,
+            int keysPerProducer, MessageType messageType, long startNanoTime, long nanoTimeMillisToCurrentTimeMillis
     ) {
         if (tradesPerSecond <= 0) {
             throw new RuntimeException("tradesPerSecond=" + tradesPerSecond);
         }
         this.producerIndex = producerIndex;
-        this.topic = topic;
         this.tradesPerNanosecond = tradesPerSecond / NANOS_PER_SECOND;
         this.messageType = messageType;
+        this.startNanoTime = (long) (startNanoTime + ((double) producerIndex / producerCount) / tradesPerNanosecond);
+        this.lastReportNanoTime = startNanoTime;
         this.nanoTimeMillisToCurrentTimeMillis = nanoTimeMillisToCurrentTimeMillis;
 
         int keysFrom = keysPerProducer * producerIndex;
@@ -82,21 +84,21 @@ public class RealTimeTradeProducer implements Runnable {
     }
 
     public static void main(String[] args) {
-        if (args.length != 6) {
+        if (args.length != 5) {
             System.err.println("Usage:");
-            System.err.println("  " + RealTimeTradeProducer.class.getSimpleName() +
-                    " <bootstrap.servers> <topic> <num producers> <trades per second>" +
+            System.err.println("  " + KafkaTradeProducer.class.getSimpleName() +
+                    " <bootstrap.servers> <num producers> <trades per second>" +
                     " <num distinct keys> <messageType>");
             System.err.println();
             System.err.println("<messageType> - byte|object");
+            System.err.println("You can use _ in the numbers, for example 1_000_000.");
             System.exit(1);
         }
         String broker = args[0];
-        String topic = args[1];
-        int numProducers = parseIntArg(args[2]);
-        int tradesPerSecond = parseIntArg(args[3]);
-        int numDistinctKeys = parseIntArg(args[4]);
-        MessageType messageType = MessageType.valueOf(args[5].toUpperCase());
+        int numProducers = parseIntArg(args[1]);
+        int tradesPerSecond = parseIntArg(args[2]);
+        int numDistinctKeys = parseIntArg(args[3]);
+        MessageType messageType = MessageType.valueOf(args[4].toUpperCase());
 
         if (tradesPerSecond < 1) {
             System.err.println("<trades per second> must be positive, but got " + tradesPerSecond);
@@ -111,9 +113,11 @@ public class RealTimeTradeProducer implements Runnable {
 
         ExecutorService executorService = Executors.newFixedThreadPool(numProducers);
         long nanoTimeMillisToCurrentTimeMillis = determineTimeOffset();
+        long startNanoTime = System.nanoTime() + MILLISECONDS.toNanos(100);
         for (int i = 0; i < numProducers; i++) {
-            RealTimeTradeProducer tradeProducer = new RealTimeTradeProducer(i, broker, topic,
-                    tradesPerSecondPerProducer, keysPerProducer, messageType, nanoTimeMillisToCurrentTimeMillis);
+            KafkaTradeProducer tradeProducer = new KafkaTradeProducer(i, numProducers, broker,
+                    tradesPerSecondPerProducer, keysPerProducer, messageType,
+                    startNanoTime, nanoTimeMillisToCurrentTimeMillis);
             executorService.submit(tradeProducer);
         }
     }
@@ -124,8 +128,6 @@ public class RealTimeTradeProducer implements Runnable {
 
     @Override
     public void run() {
-        startNanoTime = System.nanoTime();
-        lastReportNanoTime = startNanoTime;
         while (true) {
             nowNanos = System.nanoTime();
             long expectedProduced = (long) ((nowNanos - startNanoTime) * tradesPerNanosecond);
@@ -151,7 +153,7 @@ public class RealTimeTradeProducer implements Runnable {
         for (int i = 0; producedCount < expectedProduced && i < BATCH_SIZE; i++) {
             long timestampNanoTime = startNanoTime + (long) (producedCount / tradesPerNanosecond);
             long timestamp = NANOSECONDS.toMillis(timestampNanoTime) - nanoTimeMillisToCurrentTimeMillis;
-            send(baos, oos, topic, nextTrade(timestamp), messageType);
+            send(baos, oos, KAFKA_TOPIC, nextTrade(timestamp), messageType);
             producedCount++;
             latestTimestampNanoTime = timestampNanoTime;
         }
@@ -163,7 +165,7 @@ public class RealTimeTradeProducer implements Runnable {
             return;
         }
         System.out.printf("Producer %2d: topic '%s', %,.0f events/second, %,d ms behind real time%n",
-                producerIndex, topic,
+                producerIndex, KAFKA_TOPIC,
                 (double) NANOS_PER_SECOND * (producedCount - producedAtLastReport) / nanosSinceLastReport,
                 NANOSECONDS.toMillis(nowNanos - latestTimestampNanoTime));
         producedAtLastReport = producedCount;
