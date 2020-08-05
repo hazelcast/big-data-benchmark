@@ -49,7 +49,6 @@ public class JetTradeMonitor {
             System.err.println("Reads trade events from a Kafka topic named 'trades', performs sliding");
             System.err.println("window aggregation on them and records the pipeline's latency:");
             System.err.println("how much after the window's end timestamp was Jet able to emit the first");
-
             System.err.println("key-value pair of the window result.");
             System.err.println("Usage:");
             System.err.println("  " + JetTradeMonitor.class.getSimpleName() +
