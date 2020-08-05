@@ -16,7 +16,7 @@ All benchmarks begin with these common steps:
 
 ```bash
 $ cd /path/to/big-data-benchmark
-$ mvn package -pl trade-monitor/kafka-trade-producer -am
+$ mvn clean package -pl trade-monitor/kafka-trade-producer -am
 ```
 
 3. Start the program that produces events to Kafka:
@@ -29,10 +29,10 @@ localhost:9092 4 \
 1_000_000 1024 OBJECT
 ```
 
-The meaning of parameters:
+The parameters are:
 
 ```
-<bootstrap.servers> <num parallel producers> \
+<Kafka broker URI> <num parallel producers> \
 <trades per second> <num distinct keys> <messageType>
 ```
 
@@ -53,7 +53,7 @@ Here we copy it to the local Jet installation:
 
 ```bash
 $ cd /path/to/big-data-benchmark
-$ mvn package -pl trade-monitor/jet-trade-monitor -am
+$ mvn clean package -pl trade-monitor/jet-trade-monitor -am
 $ cp trade-monitor/jet-trade-monitor/target/jet-trade-monitor-4.3-SNAPSHOT.jar \
 /path/to/hazelcast-jet/lib
 ```

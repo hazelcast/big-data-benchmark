@@ -164,8 +164,8 @@ public class KafkaTradeProducer implements Runnable {
         if (NANOSECONDS.toSeconds(nanosSinceLastReport) < REPORT_PERIOD_SECONDS) {
             return;
         }
-        System.out.printf("Producer %2d: topic '%s', %,.0f events/second, %,d ms behind real time%n",
-                producerIndex, KAFKA_TOPIC,
+        System.out.printf("Producer %2d: %,.0f events/second, %,d ms behind real time%n",
+                producerIndex,
                 (double) NANOS_PER_SECOND * (producedCount - producedAtLastReport) / nanosSinceLastReport,
                 NANOSECONDS.toMillis(nowNanos - latestTimestampNanoTime));
         producedAtLastReport = producedCount;

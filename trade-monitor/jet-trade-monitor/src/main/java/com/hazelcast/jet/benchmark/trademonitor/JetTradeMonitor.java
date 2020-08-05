@@ -23,6 +23,7 @@ import java.io.ByteArrayOutputStream;
 import java.io.DataInputStream;
 import java.io.File;
 import java.io.PrintStream;
+import java.io.Serializable;
 import java.util.Arrays;
 import java.util.Properties;
 import java.util.UUID;
@@ -46,8 +47,10 @@ public class JetTradeMonitor {
         System.out.println("Supplied arguments: " + Arrays.toString(args));
         if (args.length != 12) {
             System.err.println("Reads trade events from a Kafka topic named 'trades', performs sliding");
-            System.err.println(" window aggregation on them and records the pipeline's latency:");
-            System.err.println(" how much after the window's end timestamp did Jet emit the first window result.");
+            System.err.println("window aggregation on them and records the pipeline's latency:");
+            System.err.println("how much after the window's end timestamp was Jet able to emit the first");
+
+            System.err.println("key-value pair of the window result.");
             System.err.println("Usage:");
             System.err.println("  " + JetTradeMonitor.class.getSimpleName() +
                     " <Kafka broker URI> <message offset auto-reset> <message type> \\");
@@ -148,9 +151,9 @@ public class JetTradeMonitor {
         JetInstance jet = Jet.bootstrappedInstance();
         Job job = jet.newJob(pipeline, config);
         Runtime.getRuntime().addShutdownHook(new Thread(job::cancel));
-        System.out.println("Benchmarking job is running, let it run until you see the message");
+        System.out.println("Benchmarking job is now in progress, let it run until you see the message");
         System.out.println("\"" + BENCHMARK_DONE_MESSAGE + "\" in the Jet server log,");
-        System.out.println("and then stop it with Ctrl-C.");
+        System.out.println("and then stop it here with Ctrl-C. The result files are on the server.");
         job.join();
     }
 
@@ -158,7 +161,7 @@ public class JetTradeMonitor {
         return Integer.parseInt(arg.replace("_", ""));
     }
 
-    private static class DetermineLatency {
+    private static class DetermineLatency implements Serializable {
         private long startTimestamp;
         private long lastTimestamp;
 
@@ -187,7 +190,7 @@ public class JetTradeMonitor {
         }
     }
 
-    private static class RecordLatencyHistogram {
+    private static class RecordLatencyHistogram implements Serializable {
         private final long warmupTimeMillis;
         private final long totalTimeMillis;
         private Histogram histogram = new Histogram(5);
