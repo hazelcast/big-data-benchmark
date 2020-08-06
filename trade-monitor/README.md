@@ -125,8 +125,9 @@ In both cases the filename is just "0", that's how Jet saves them.
 To visualize a HdrHistogram, you can go to [this
 page](https://hdrhistogram.github.io/HdrHistogram/plotFiles.html).
 
-To quickly plot the results, you can use `gnuplot` :
+To visualize the raw latency log, you can use `gnuplot` :
 
-```
-$ gnuplot -e "plot 'target/0','target/1'; pause -1"
+```bash
+$ cd /path/to/hazelcast-jet/benchmark-results/latency-log
+$ gnuplot -e "set datafile separator ','; plot '0'; pause -1"
 ```
