@@ -23,7 +23,7 @@ $ mvn clean package -pl trade-monitor/kafka-trade-producer -am
 
 ```bash
 $ cd trade-monitor/kafka-trade-producer
-$ java -cp target/kafka-trade-producer-4.3-SNAPSHOT.jar \
+$ java -cp target/kafka-trade-producer-1.0-SNAPSHOT.jar \
 com.hazelcast.jet.benchmark.trademonitor.KafkaTradeProducer \
 localhost:9092 4 \
 1_000_000 1024 OBJECT
@@ -61,7 +61,7 @@ Here we copy it to the local Jet installation:
 ```bash
 $ cd /path/to/big-data-benchmark
 $ mvn clean package -pl trade-monitor/jet-trade-monitor -am
-$ cp trade-monitor/jet-trade-monitor/target/jet-trade-monitor-4.3-SNAPSHOT.jar \
+$ cp trade-monitor/jet-trade-monitor/target/jet-trade-monitor-1.0-SNAPSHOT.jar \
 /path/to/hazelcast-jet/lib
 ```
 
@@ -76,7 +76,7 @@ $ bin/jet-start
 
 ```bash
 $ cd /path/to/hazelcast-jet
-$ bin/jet -v submit lib/jet-trade-monitor-4.3-SNAPSHOT.jar \
+$ bin/jet -v submit lib/jet-trade-monitor-1.0-SNAPSHOT.jar \
 localhost:9092 latest OBJECT \
 4 5000 \
 1000 100 \
