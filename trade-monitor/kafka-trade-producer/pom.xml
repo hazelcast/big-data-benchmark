@@ -7,7 +7,7 @@
     <parent>
         <groupId>com.hazelcast.jet.benchmark</groupId>
         <artifactId>trade-monitor</artifactId>
-        <version>4.3-SNAPSHOT</version>
+        <version>4.2-SNAPSHOT</version>
     </parent>
 
     <build>
@@ -18,7 +18,7 @@
                 <configuration>
                     <archive>
                         <manifest>
-                            <mainClass>com.hazelcast.jet.benchmark.trademonitor.RealTimeTradeProducer</mainClass>
+                            <mainClass>com.hazelcast.jet.benchmark.trademonitor.KafkaTradeProducer</mainClass>
                         </manifest>
                     </archive>
                 </configuration>
