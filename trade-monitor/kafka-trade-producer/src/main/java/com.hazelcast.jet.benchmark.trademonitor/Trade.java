@@ -19,11 +19,11 @@ package com.hazelcast.jet.benchmark.trademonitor;
 public class Trade {
 
     private final long time;
-    private final String ticker;
+    private final int ticker;
     private final int quantity;
     private final int price; // in cents
 
-    Trade(long time, String ticker, int quantity, int price) {
+    Trade(long time, int ticker, int quantity, int price) {
         this.time = time;
         this.ticker = ticker;
         this.quantity = quantity;
@@ -34,7 +34,7 @@ public class Trade {
         return time;
     }
 
-    public String getTicker() {
+    public int getTicker() {
         return ticker;
     }
 

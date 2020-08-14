@@ -15,7 +15,8 @@ import com.hazelcast.jet.pipeline.Sinks;
 import com.hazelcast.jet.pipeline.StreamStage;
 import org.HdrHistogram.Histogram;
 import org.apache.kafka.clients.consumer.ConsumerRecord;
-import org.apache.kafka.common.serialization.LongDeserializer;
+import org.apache.kafka.common.serialization.IntegerDeserializer;
+import org.apache.kafka.common.serialization.StringDeserializer;
 
 import java.io.ByteArrayOutputStream;
 import java.io.File;
@@ -165,7 +166,7 @@ public class JetTradeMonitor {
         return props(
                 "bootstrap.servers", brokerUrl,
                 "group.id", UUID.randomUUID().toString(),
-                "key.deserializer", LongDeserializer.class.getName(),
+                "key.deserializer", IntegerDeserializer.class.getName(),
                 "value.deserializer", TradeDeserializer.class.getName(),
                 "auto.offset.reset", offsetReset,
                 "max.poll.records", "32768"
@@ -176,7 +177,7 @@ public class JetTradeMonitor {
         private long startTimestamp;
         private long lastTimestamp;
 
-        Tuple2<Long, Long> map(KeyedWindowResult<String, Long> kwr) {
+        Tuple2<Long, Long> map(KeyedWindowResult<Integer, Long> kwr) {
             long timestamp = kwr.end();
             if (timestamp <= lastTimestamp) {
                 return null;
@@ -195,7 +196,7 @@ public class JetTradeMonitor {
                 throw new RuntimeException("Negative latency: " + latency);
             }
             if (latency >= LATENCY_REPORTING_THRESHOLD_MS) {
-                System.out.format("Latency %,d ms (first seen key: %s, count %,d)%n", latency, kwr.getKey(), count);
+                System.out.format("Latency %,d ms (first seen key: %,d, count %,d)%n", latency, kwr.getKey(), count);
             }
             return tuple2(timestamp - startTimestamp, latency);
         }

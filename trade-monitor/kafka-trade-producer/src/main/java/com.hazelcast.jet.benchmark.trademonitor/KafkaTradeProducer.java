@@ -4,9 +4,8 @@ import com.hazelcast.jet.benchmark.Util;
 import com.hazelcast.jet.benchmark.ValidationException;
 import org.apache.kafka.clients.producer.KafkaProducer;
 import org.apache.kafka.clients.producer.ProducerRecord;
-import org.apache.kafka.common.serialization.StringSerializer;
+import org.apache.kafka.common.serialization.IntegerSerializer;
 
-import java.util.Arrays;
 import java.util.Properties;
 import java.util.concurrent.ExecutorService;
 import java.util.concurrent.Executors;
@@ -35,13 +34,14 @@ public class KafkaTradeProducer implements Runnable {
     private static final long REPORT_PERIOD_SECONDS = 2;
 
     private final int threadIndex;
+    private final int tickerLow;
+    private final int tickerHigh;
     private final double tradesPerNanosecond;
     private final long startNanoTime;
     private final long nanoTimeMillisToCurrentTimeMillis;
-    private final String[] tickers;
     private final KafkaProducer<String, Trade> kafkaProducer;
 
-    private int tickerIndex;
+    private int currentTicker;
     private long lastReportNanoTime;
     private long nowNanos;
     private long producedCount;
@@ -63,11 +63,9 @@ public class KafkaTradeProducer implements Runnable {
         this.startNanoTime = (long) (startNanoTime + ((double) threadIndex / numThreads) / tradesPerNanosecond);
         this.lastReportNanoTime = startNanoTime;
         this.nanoTimeMillisToCurrentTimeMillis = nanoTimeMillisToCurrentTimeMillis;
-
-        int keysFrom = keysPerThread * threadIndex;
-        int keysTo = keysPerThread * (threadIndex + 1);
-        tickers = new String[keysTo - keysFrom];
-        Arrays.setAll(tickers, i -> "T-" + (keysFrom + i));
+        tickerLow = keysPerThread * threadIndex;
+        tickerHigh = keysPerThread * (threadIndex + 1);
+        currentTicker = tickerLow;
     }
 
     public static void main(String[] args) {
@@ -97,7 +95,7 @@ public class KafkaTradeProducer implements Runnable {
             }
             Properties kafkaProps = props(
                     "bootstrap.servers", brokerUri,
-                    "key.serializer", StringSerializer.class.getName(),
+                    "key.serializer", IntegerSerializer.class.getName(),
                     "value.serializer", TradeSerializer.class.getName()
             );
             ExecutorService executorService = Executors.newFixedThreadPool(numThreads);
@@ -201,11 +199,13 @@ public class KafkaTradeProducer implements Runnable {
     }
 
     private Trade nextTrade(long time) {
-        String ticker = tickers[tickerIndex++];
-        if (tickerIndex == tickers.length) {
-            tickerIndex = 0;
+        try {
+            return new Trade(time, currentTicker, 100, 10000);
+        } finally {
+            if (++currentTicker == tickerHigh) {
+                currentTicker = tickerLow;
+            }
         }
-        return new Trade(time, ticker, 100, 10000);
     }
 
     private void send(Trade trade) {
