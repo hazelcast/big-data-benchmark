@@ -11,6 +11,7 @@
     <packaging>pom</packaging>
     <artifactId>trade-monitor</artifactId>
     <modules>
+        <module>common</module>
         <module>kafka-trade-producer</module>
         <module>jet-trade-monitor</module>
         <module>flink-trade-monitor</module>

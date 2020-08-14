@@ -16,14 +16,12 @@ public class TradeDeserializer implements Deserializer<Trade>, Serializable {
 
     @Override
     public Trade deserialize(String topic, byte[] bytes) {
-        try {
-            try (DataInputStream in = new DataInputStream(new ByteArrayInputStream(bytes))) {
-                String ticker = in.readUTF();
-                long time = in.readLong();
-                int price = in.readInt();
-                int quantity = in.readInt();
-                return new Trade(time, ticker, quantity, price);
-            }
+        try (DataInputStream in = new DataInputStream(new ByteArrayInputStream(bytes))) {
+            String ticker = in.readUTF();
+            long time = in.readLong();
+            int price = in.readInt();
+            int quantity = in.readInt();
+            return new Trade(time, ticker, quantity, price);
         } catch (IOException e) {
             throw new RuntimeException(e);
         }

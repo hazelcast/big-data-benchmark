@@ -9,93 +9,102 @@ and Apache Spark Streaming.
 
 All benchmarks begin with these common steps:
 
-1. Start Apache Kafka, see the [Kafka
-   documentation](https://kafka.apache.org/documentation/)
+1. Start Apache Kafka. You can follow Steps 1 and 2 in the Kafka
+  [quickstart guide](https://kafka.apache.org/quickstart)
 
-2. Build the benchmarking code:
+2. Create a Kafka topic named `trades`, setting the number of partitions
+  equal to the number of parallel producer threads you want to use in
+  the benchmark (explained in Step 4 below):
+
+```sh
+$ bin/kafka-topics.sh --bootstrap-server localhost:9092 \
+--create --topic trades --partitions 4
+```
+
+3. Build the benchmarking code:
 
 ```bash
 $ cd /path/to/big-data-benchmark
-$ mvn clean package -pl trade-monitor/kafka-trade-producer -am
+$ mvn clean package
 ```
 
-3. Start the program that produces events to Kafka:
+4. Start the program that produces events to Kafka:
 
 ```bash
 $ cd trade-monitor/kafka-trade-producer
-$ java -cp target/kafka-trade-producer-1.0-SNAPSHOT.jar \
-com.hazelcast.jet.benchmark.trademonitor.KafkaTradeProducer \
-localhost:9092 4 \
-1_000_000 1024 OBJECT
+$ java -jar target/kafka-trade-producer-1.0-SNAPSHOT.jar [config-file]
 ```
 
-The parameters are:
+The default config filename is `kafka-trade-producer.properties` in the
+current directory. This file already exists in the kafka-trade-producer
+directory and looks like this:
 
 ```
-<Kafka broker URI> <num parallel producers> \
-<trades per second> <num distinct keys> <messageType>
+kafka-broker-uri=localhost:9092
+num-parallel-producers=4
+trades-per-second=1_000_000
+num-distinct-keys=10_000
 ```
 
-The producer will emit the given number of trade events per second to
-Kafka topic "trades", and it will use `<num producers>` threads to do
+The program emits the given number of trade events per second to the
+Kafka topic "trades", and uses `num-parallel-producers` threads to do
 it. Every thread runs its own instance of a Kafka Producer client and
 produces its share of the requested events per second, using its
-distinct share of the requested keyset size.
+distinct share of the requested keyset size. Each producer sends the
+data to its own Kafka partition ID, equal to the zero-based index of the
+producer.
 
-The trade event timestamps are predetermined and don't depend on
-wall-clock time. Effectively, this program simulates a constant stream
-of equally-spaced trade events. It guarantees it won't try to send an
-event to Kafka before it has occurred, but there's no guarantee on how
-much later it will manage to send it. If the requested throughput is too
+The trade event timestamps are predetermined and don't depend on the
+current time. Effectively, this program simulates a constant stream of
+equally-spaced trade events. It guarantees it won't try to send an event
+to Kafka before it has occurred, but there's no guarantee on how much
+later it will manage to send it. If the requested throughput is too
 high, the producer may be increasingly falling back behind real time.
-You can track this in the program's output.
+The timestamps it emits will still be the same, but this delay in
+sending the events contributes to the reported end-to-end latency. You
+can track this in the program's output.
 
 ## Jet benchmark
 
 1. Download and unzip the Hazelcast Jet distribution package, see the
 [Jet documentation](https://jet-start.sh/docs/operations/installation).
 
-2. Build the Pipeline JAR and copy to the `lib` folder on all Jet nodes.
-Here we copy it to the local Jet installation:
+2. Start a Jet node:
 
 ```bash
-$ cd /path/to/big-data-benchmark
-$ mvn clean package -pl trade-monitor/jet-trade-monitor -am
-$ cp trade-monitor/jet-trade-monitor/target/jet-trade-monitor-1.0-SNAPSHOT.jar \
-/path/to/hazelcast-jet/lib
-```
-
-3. Start a Jet node:
-
-```bash
-$ cd /path/to/hazelcast-jet
-$ bin/jet-start
+$ /path/to/hazelcast-jet/bin/jet-start
 ```
 
 3. Submit the job
 
 ```bash
-$ cd /path/to/hazelcast-jet
-$ bin/jet -v submit lib/jet-trade-monitor-1.0-SNAPSHOT.jar \
-localhost:9092 latest OBJECT \
-4 5000 \
-1000 100 \
-AT_LEAST_ONCE 10000 \
-20 240 benchmark-results/
+$ cd /path/to/big-data-benchmark/trade-monitor/jet-trade-monitor
+$ /path/to/jet/bin/jet -v submit /target/jet-trade-monitor-1.0-SNAPSHOT.jar \
+[config-file]
 ```
 
-The parameters are:
+The default config filename is `jet-trade-monitor.properties` in the
+current directory. This file already exists in the jet-trade-monitor
+directory and looks like this:
 
 ```
-<Kafka broker URI> <message offset auto-reset> <message type>
-<Kafka source local parallelism> <max event lag ms> \
-<window size ms> <sliding step ms> \
-<processing guarantee> <snapshot interval ms> \
-<warmup seconds> <measurement seconds> <output path>
+broker-uri=localhost:9092
+# earliest or latest:
+offset-reset=latest
+kafka-source-local-parallelism=4
+allowed-event-lag-millis=0
+window-size-millis=1_000
+sliding-step-millis=10
+# at-least-once or exactly-once:
+processing-guarantee=at-least-once
+snapshot-interval-millis=10_000
+warmup-seconds=40
+measurement-seconds=240
+output-path=benchmark-results
 ```
 
 The submitted job reads the trade events that the producer program sent
-to Kafka. It performs sliding window aggregation on them (determines
+to Kafka. It performs sliding window aggregation on them (computes
 trades-per-second for each ticker) and then records the end-to-end
 latency: how much after the window's end timestamp was Jet able to emit
 the first key-value pair of the window result.
@@ -103,9 +112,15 @@ the first key-value pair of the window result.
 Jet guarantees it won't emit a window result before having observed all
 the events up to its end time. If you set the _allowed event lag_ to
 more than zero, it will increase the end-to-end latency by that much
-because it tells Jet how much to wait for any late-coming events. When
-you use more than one producer, since they send their events
-independently, this usually results in some event disorder.
+because it tells Jet how much to wait for any late-coming events.
+
+Generally, the parallelism of the Kafka source should match the number
+of partitions in the `trades` topic. In the configuration you specify
+the _local_ parallelism of the Kafka source, to get the total
+parallelism multiply it by the number of nodes in the Jet cluster. If
+the total parallelism is less than the number of partitions, some source
+threads will read from more than one partition. If it is higher, some
+threads will remain idle.
 
 Watch the console output at the server. When you see "benchmarking is
 done" being repeatedly printed, you can stop the job with Ctrl-C.
@@ -131,3 +146,16 @@ To visualize the raw latency log, you can use `gnuplot` :
 $ cd /path/to/hazelcast-jet/benchmark-results/latency-log
 $ gnuplot -e "set datafile separator ','; plot '0'; pause -1"
 ```
+
+5. Clean up Kafka
+
+Since the benchmark produces a lot of data to Kafka, which holds on to
+it for a week by default, it is a good idea to clean up Kafka storage
+after each run. Stop the Kafka server and issue
+
+```sh
+$ rm -r /tmp/kafka-logs
+```
+
+The Kafka topic metadata is stored in ZooKeeper so you don't have to
+re-create it.

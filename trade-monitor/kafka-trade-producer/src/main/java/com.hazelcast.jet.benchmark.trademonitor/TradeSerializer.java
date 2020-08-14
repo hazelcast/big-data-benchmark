@@ -9,6 +9,7 @@ import java.util.Map;
 
 public class TradeSerializer implements Serializer<Trade> {
     private final ByteArrayOutputStream outStream = new ByteArrayOutputStream();
+    private final DataOutputStream dataOut = new DataOutputStream(outStream);
 
     @Override
     public void configure(Map<String, ?> configs, boolean isKey) {
@@ -16,26 +17,21 @@ public class TradeSerializer implements Serializer<Trade> {
 
     @Override
     public byte[] serialize(String topic, Trade trade) {
-        DataOutputStream out = new DataOutputStream(outStream);
         try {
-            out.writeUTF(trade.getTicker());
-            out.writeLong(trade.getTime());
-            out.writeInt(trade.getPrice());
-            out.writeInt(trade.getQuantity());
+            dataOut.writeUTF(trade.getTicker());
+            dataOut.writeLong(trade.getTime());
+            dataOut.writeInt(trade.getPrice());
+            dataOut.writeInt(trade.getQuantity());
+            dataOut.flush();
+            return outStream.toByteArray();
         } catch (IOException e) {
-            throw new RuntimeException(e);
+            throw new RuntimeException("Failed to serialize a Trade object", e);
+        } finally {
+            outStream.reset();
         }
-        byte[] bytes = outStream.toByteArray();
-        outStream.reset();
-        return bytes;
     }
 
     @Override
     public void close() {
-        try {
-            outStream.close();
-        } catch (IOException e) {
-            throw new RuntimeException(e);
-        }
     }
 }

@@ -1,44 +1,45 @@
 package com.hazelcast.jet.benchmark.trademonitor;
 
+import com.hazelcast.jet.benchmark.Util;
+import com.hazelcast.jet.benchmark.ValidationException;
 import org.apache.kafka.clients.producer.KafkaProducer;
 import org.apache.kafka.clients.producer.ProducerRecord;
-import org.apache.kafka.common.serialization.ByteArraySerializer;
-import org.apache.kafka.common.serialization.LongSerializer;
+import org.apache.kafka.common.serialization.StringSerializer;
 
-import java.io.ByteArrayOutputStream;
-import java.io.DataOutputStream;
-import java.io.IOException;
 import java.util.Arrays;
 import java.util.Properties;
 import java.util.concurrent.ExecutorService;
 import java.util.concurrent.Executors;
 import java.util.concurrent.locks.LockSupport;
 
+import static com.hazelcast.jet.benchmark.Util.ensureProp;
+import static com.hazelcast.jet.benchmark.Util.loadProps;
+import static com.hazelcast.jet.benchmark.Util.parseIntProp;
+import static com.hazelcast.jet.benchmark.Util.props;
 import static java.util.concurrent.TimeUnit.MICROSECONDS;
 import static java.util.concurrent.TimeUnit.MILLISECONDS;
 import static java.util.concurrent.TimeUnit.NANOSECONDS;
 import static java.util.concurrent.TimeUnit.SECONDS;
 
 public class KafkaTradeProducer implements Runnable {
-    public enum MessageType {
-        BYTE,
-        OBJECT
-    }
 
+    public static final String DEFAULT_PROPERTIES_FILENAME = "kafka-trade-producer.properties";
+    public static final String PROP_KAFKA_BROKER_URI = "kafka-broker-uri";
+    public static final String PROP_NUM_PARALLEL_PRODUCERS = "num-parallel-producers";
+    public static final String PROP_TRADES_PER_SECOND = "trades-per-second";
+    public static final String PROP_NUM_DISTINCT_KEYS = "num-distinct-keys";
     public static final String KAFKA_TOPIC = "trades";
+
     private static final int BATCH_SIZE = 256;
     private static final long NANOS_PER_SECOND = SECONDS.toNanos(1);
     private static final long REPORT_PERIOD_SECONDS = 2;
 
-    private final int producerIndex;
+    private final int threadIndex;
     private final double tradesPerNanosecond;
     private final long startNanoTime;
     private final long nanoTimeMillisToCurrentTimeMillis;
     private final String[] tickers;
-    private final KafkaProducer<Long, Object> producer;
-    private final MessageType messageType;
-    private final ByteArrayOutputStream baos = new ByteArrayOutputStream();
-    private final DataOutputStream oos = new DataOutputStream(baos);
+    private final KafkaProducer<String, Trade> kafkaProducer;
 
     private int tickerIndex;
     private long lastReportNanoTime;
@@ -47,96 +48,123 @@ public class KafkaTradeProducer implements Runnable {
     private long producedAtLastReport;
     private long latestTimestampNanoTime;
 
-
     private KafkaTradeProducer(
-            int producerIndex, int producerCount, String broker, double tradesPerSecond,
-            int keysPerProducer, MessageType messageType, long startNanoTime, long nanoTimeMillisToCurrentTimeMillis
+            int threadIndex, int numThreads,
+            KafkaProducer<String, Trade> kafkaProducer,
+            double tradesPerSecond, int keysPerThread,
+            long startNanoTime, long nanoTimeMillisToCurrentTimeMillis
     ) {
         if (tradesPerSecond <= 0) {
-            throw new RuntimeException("tradesPerSecond=" + tradesPerSecond);
+            throw new RuntimeException("tradesPerSecond = " + tradesPerSecond);
         }
-        this.producerIndex = producerIndex;
+        this.kafkaProducer = kafkaProducer;
+        this.threadIndex = threadIndex;
         this.tradesPerNanosecond = tradesPerSecond / NANOS_PER_SECOND;
-        this.messageType = messageType;
-        this.startNanoTime = (long) (startNanoTime + ((double) producerIndex / producerCount) / tradesPerNanosecond);
+        this.startNanoTime = (long) (startNanoTime + ((double) threadIndex / numThreads) / tradesPerNanosecond);
         this.lastReportNanoTime = startNanoTime;
         this.nanoTimeMillisToCurrentTimeMillis = nanoTimeMillisToCurrentTimeMillis;
 
-        int keysFrom = keysPerProducer * producerIndex;
-        int keysTo = keysPerProducer * (producerIndex + 1);
+        int keysFrom = keysPerThread * threadIndex;
+        int keysTo = keysPerThread * (threadIndex + 1);
         tickers = new String[keysTo - keysFrom];
         Arrays.setAll(tickers, i -> "T-" + (keysFrom + i));
-
-        Properties props = new Properties();
-        props.setProperty("bootstrap.servers", broker);
-        props.setProperty("key.serializer", LongSerializer.class.getName());
-        switch (messageType) {
-            case BYTE:
-                props.setProperty("value.serializer", ByteArraySerializer.class.getName());
-                break;
-            case OBJECT:
-                props.setProperty("value.serializer", TradeSerializer.class.getName());
-                break;
-            default:
-                throw new RuntimeException("Missing implementation for message type " + messageType);
-        }
-        producer = new KafkaProducer<>(props);
     }
 
     public static void main(String[] args) {
-        if (args.length != 5) {
-            System.err.println("Usage:");
-            System.err.println("  " + KafkaTradeProducer.class.getSimpleName() +
-                    " <bootstrap.servers> <num producers> <trades per second>" +
-                    " <num distinct keys> <messageType>");
+        String propsPath = args.length > 0 ? args[0] : DEFAULT_PROPERTIES_FILENAME;
+        Properties props = loadProps(propsPath);
+        try {
+            String brokerUri = ensureProp(props, PROP_KAFKA_BROKER_URI);
+            int numThreads = parseIntProp(props, PROP_NUM_PARALLEL_PRODUCERS);
+            int tradesPerSecond = parseIntProp(props, PROP_TRADES_PER_SECOND);
+            int numDistinctKeys = parseIntProp(props, PROP_NUM_DISTINCT_KEYS);
+            Util.printParams(
+                    PROP_KAFKA_BROKER_URI, brokerUri,
+                    PROP_NUM_PARALLEL_PRODUCERS, numThreads,
+                    PROP_TRADES_PER_SECOND, tradesPerSecond,
+                    PROP_NUM_DISTINCT_KEYS, numDistinctKeys
+            );
+            if (tradesPerSecond < 1) {
+                System.err.println(PROP_TRADES_PER_SECOND + " must be positive, but got " + tradesPerSecond);
+                System.exit(1);
+            }
+            int keysPerThread = numDistinctKeys / numThreads;
+            double tradesPerSecondPerProducer = (double) tradesPerSecond / numThreads;
+            if (keysPerThread * numThreads * 100 / numDistinctKeys < 99) {
+                System.err.println(PROP_NUM_DISTINCT_KEYS + " not divisible by " + PROP_NUM_PARALLEL_PRODUCERS +
+                        " and the error is >1%");
+                System.exit(1);
+            }
+            Properties kafkaProps = props(
+                    "bootstrap.servers", brokerUri,
+                    "key.serializer", StringSerializer.class.getName(),
+                    "value.serializer", TradeSerializer.class.getName()
+            );
+            ExecutorService executorService = Executors.newFixedThreadPool(numThreads);
+            long nanoTimeMillisToCurrentTimeMillis = determineTimeOffset();
+            long startNanoTime = System.nanoTime() + MILLISECONDS.toNanos(100);
+            for (int i = 0; i < numThreads; i++) {
+                KafkaProducer<String, Trade> kafkaProducer = new KafkaProducer<>(kafkaProps);
+                KafkaTradeProducer tradeProducer = new KafkaTradeProducer(i, numThreads, kafkaProducer,
+                        tradesPerSecondPerProducer, keysPerThread,
+                        startNanoTime, nanoTimeMillisToCurrentTimeMillis);
+                executorService.submit(tradeProducer);
+            }
+            executorService.shutdown();
+        } catch (ValidationException e) {
+            System.err.println(e.getMessage());
             System.err.println();
-            System.err.println("<messageType> - byte|object");
-            System.err.println("You can use _ in the numbers, for example 1_000_000.");
+            System.err.println("Usage:");
+            System.err.println("  " + KafkaTradeProducer.class.getSimpleName() + " [props-file]");
+            System.err.println();
+            System.err.println(
+                    "The default properties file is " + DEFAULT_PROPERTIES_FILENAME + " in the current directory");
+            System.err.println("An example of the required properties:");
+            System.err.println(
+                    "    " + PROP_KAFKA_BROKER_URI + "=localhost:9092\n" +
+                    "    " + PROP_NUM_PARALLEL_PRODUCERS + "=1\n" +
+                    "    " + PROP_TRADES_PER_SECOND + "=1_000_000\n" +
+                    "    " + PROP_NUM_DISTINCT_KEYS + "=10_000");
+            System.err.println();
+            System.err.println(
+                    "The program emits the given number of " + PROP_TRADES_PER_SECOND + " to the\n" +
+                    "Kafka topic \"" + KAFKA_TOPIC + "\", and uses " + PROP_NUM_PARALLEL_PRODUCERS + " threads\n" +
+                    "to do it. Every thread runs its own instance of a Kafka Producer client\n" +
+                    "and produces its share of the requested events per second, using its\n" +
+                    "distinct share of the requested keyset size. Each producer sends the\n" +
+                    "data to its own Kafka partition ID, equal to the zero-based index of the\n" +
+                    "producer.\n");
+            System.err.println(
+                    "The trade event timestamps are predetermined and don't depend on the\n" +
+                    "current time. Effectively, this program simulates a constant stream of\n" +
+                    "equally-spaced trade events. It guarantees it won't try to send an event\n" +
+                    "to Kafka before it has occurred, but there's no guarantee on how much\n" +
+                    "later it will manage to send it. If the requested throughput is too\n" +
+                    "high, the producer may be increasingly falling back behind real time.\n" +
+                    "The timestamps it emits will still be the same, but this delay in\n" +
+                    "sending the events contributes to the reported end-to-end latency. You\n" +
+                    "can track this in the program's output.\n"
+            );
             System.exit(1);
         }
-        String broker = args[0];
-        int numProducers = parseIntArg(args[1]);
-        int tradesPerSecond = parseIntArg(args[2]);
-        int numDistinctKeys = parseIntArg(args[3]);
-        MessageType messageType = MessageType.valueOf(args[4].toUpperCase());
-
-        if (tradesPerSecond < 1) {
-            System.err.println("<trades per second> must be positive, but got " + tradesPerSecond);
-            System.exit(1);
-        }
-        int keysPerProducer = numDistinctKeys / numProducers;
-        double tradesPerSecondPerProducer = (double) tradesPerSecond / numProducers;
-        if (keysPerProducer * numProducers * 100 / numDistinctKeys < 99) {
-            System.err.println("<num distinct keys> not divisible by <num producers> and the error is >1%");
-            System.exit(1);
-        }
-
-        ExecutorService executorService = Executors.newFixedThreadPool(numProducers);
-        long nanoTimeMillisToCurrentTimeMillis = determineTimeOffset();
-        long startNanoTime = System.nanoTime() + MILLISECONDS.toNanos(100);
-        for (int i = 0; i < numProducers; i++) {
-            KafkaTradeProducer tradeProducer = new KafkaTradeProducer(i, numProducers, broker,
-                    tradesPerSecondPerProducer, keysPerProducer, messageType,
-                    startNanoTime, nanoTimeMillisToCurrentTimeMillis);
-            executorService.submit(tradeProducer);
-        }
-    }
-
-    private static int parseIntArg(String arg) {
-        return Integer.parseInt(arg.replace("_", ""));
     }
 
     @Override
     public void run() {
-        while (true) {
-            nowNanos = System.nanoTime();
-            long expectedProduced = (long) ((nowNanos - startNanoTime) * tradesPerNanosecond);
-            if (producedCount < expectedProduced) {
-                produceUntil(expectedProduced);
-                reportThroughput();
-            } else {
-                sleepUntilDue(expectedProduced + 1);
+        try {
+            while (true) {
+                nowNanos = System.nanoTime();
+                long expectedProduced = (long) ((nowNanos - startNanoTime) * tradesPerNanosecond);
+                if (producedCount < expectedProduced) {
+                    produceUntil(expectedProduced);
+                    reportThroughput();
+                } else {
+                    sleepUntilDue(expectedProduced + 1);
+                }
             }
+        } catch (Exception e) {
+            System.err.println("Producer #" + threadIndex + " failed");
+            e.printStackTrace();
         }
     }
 
@@ -153,7 +181,7 @@ public class KafkaTradeProducer implements Runnable {
         for (int i = 0; producedCount < expectedProduced && i < BATCH_SIZE; i++) {
             long timestampNanoTime = startNanoTime + (long) (producedCount / tradesPerNanosecond);
             long timestamp = NANOSECONDS.toMillis(timestampNanoTime) - nanoTimeMillisToCurrentTimeMillis;
-            send(baos, oos, KAFKA_TOPIC, nextTrade(timestamp), messageType);
+            send(nextTrade(timestamp));
             producedCount++;
             latestTimestampNanoTime = timestampNanoTime;
         }
@@ -164,8 +192,8 @@ public class KafkaTradeProducer implements Runnable {
         if (NANOSECONDS.toSeconds(nanosSinceLastReport) < REPORT_PERIOD_SECONDS) {
             return;
         }
-        System.out.printf("Producer %2d: %,.0f events/second, %,d ms behind real time%n",
-                producerIndex,
+        System.out.printf("Producer %d: %,.0f events/second, %,d ms behind real time%n",
+                threadIndex,
                 (double) NANOS_PER_SECOND * (producedCount - producedAtLastReport) / nanosSinceLastReport,
                 NANOSECONDS.toMillis(nowNanos - latestTimestampNanoTime));
         producedAtLastReport = producedCount;
@@ -180,35 +208,8 @@ public class KafkaTradeProducer implements Runnable {
         return new Trade(time, ticker, 100, 10000);
     }
 
-    private void send(
-            ByteArrayOutputStream baos, DataOutputStream oos, String topic, Trade trade, MessageType messageType
-    ) {
-        Object msgObject;
-        switch (messageType) {
-            case BYTE:
-                msgObject = serialize(baos, oos, trade);
-                break;
-            case OBJECT:
-                msgObject = trade;
-                break;
-            default:
-                throw new RuntimeException("Missing implementation for message type " + messageType);
-        }
-        producer.send(new ProducerRecord<>(topic, msgObject));
-    }
-
-    private byte[] serialize(ByteArrayOutputStream baos, DataOutputStream oos, Trade trade) {
-        try {
-            oos.writeUTF(trade.getTicker());
-            oos.writeLong(trade.getTime());
-            oos.writeInt(trade.getPrice());
-            oos.writeInt(trade.getQuantity());
-            return baos.toByteArray();
-        } catch (IOException e) {
-            throw new RuntimeException(e);
-        } finally {
-            baos.reset();
-        }
+    private void send(Trade trade) {
+        kafkaProducer.send(new ProducerRecord<>(KAFKA_TOPIC, threadIndex, trade.getTime(), null, trade));
     }
 
     private static long determineTimeOffset() {

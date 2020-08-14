@@ -1,9 +1,10 @@
 package com.hazelcast.jet.benchmark.trademonitor;
 
+import com.hazelcast.function.FunctionEx;
 import com.hazelcast.jet.Jet;
 import com.hazelcast.jet.JetInstance;
 import com.hazelcast.jet.Job;
-import com.hazelcast.jet.benchmark.trademonitor.KafkaTradeProducer.MessageType;
+import com.hazelcast.jet.benchmark.ValidationException;
 import com.hazelcast.jet.config.JobConfig;
 import com.hazelcast.jet.config.ProcessingGuarantee;
 import com.hazelcast.jet.datamodel.KeyedWindowResult;
@@ -14,150 +15,161 @@ import com.hazelcast.jet.pipeline.Sinks;
 import com.hazelcast.jet.pipeline.StreamStage;
 import org.HdrHistogram.Histogram;
 import org.apache.kafka.clients.consumer.ConsumerRecord;
-import org.apache.kafka.common.serialization.ByteArrayDeserializer;
 import org.apache.kafka.common.serialization.LongDeserializer;
-import org.apache.log4j.Logger;
 
-import java.io.ByteArrayInputStream;
 import java.io.ByteArrayOutputStream;
-import java.io.DataInputStream;
 import java.io.File;
 import java.io.PrintStream;
 import java.io.Serializable;
-import java.util.Arrays;
 import java.util.Properties;
 import java.util.UUID;
 
 import static com.hazelcast.jet.aggregate.AggregateOperations.counting;
-import static com.hazelcast.jet.benchmark.trademonitor.KafkaTradeProducer.MessageType.BYTE;
+import static com.hazelcast.jet.benchmark.Util.ensureProp;
+import static com.hazelcast.jet.benchmark.Util.loadProps;
+import static com.hazelcast.jet.benchmark.Util.parseIntProp;
+import static com.hazelcast.jet.benchmark.Util.props;
 import static com.hazelcast.jet.datamodel.Tuple2.tuple2;
-import static com.hazelcast.jet.pipeline.ServiceFactories.sharedService;
 import static com.hazelcast.jet.pipeline.WindowDefinition.sliding;
 import static java.util.concurrent.TimeUnit.SECONDS;
 
 public class JetTradeMonitor {
+    public static final String DEFAULT_PROPERTIES_FILENAME = "jet-trade-monitor.properties";
+    public static final String PROP_BROKER_URI = "broker-uri";
+    public static final String PROP_OFFSET_RESET = "offset-reset";
+    public static final String PROP_KAFKA_SOURCE_LOCAL_PARALLELISM = "kafka-source-local-parallelism";
+    public static final String PROP_ALLOWED_EVENT_LAG_MILLIS = "allowed-event-lag-millis";
+    public static final String PROP_WINDOW_SIZE_MILLIS = "window-size-millis";
+    public static final String PROP_SLIDING_STEP_MILLIS = "sliding-step-millis";
+    public static final String PROP_PROCESSING_GUARANTEE = "processing-guarantee";
+    public static final String PROP_SNAPSHOT_INTERVAL_MILLIS = "snapshot-interval-millis";
+    public static final String PROP_WARMUP_SECONDS = "warmup-seconds";
+    public static final String PROP_MEASUREMENT_SECONDS = "measurement-seconds";
+    public static final String PROP_OUTPUT_PATH = "output-path";
     public static final String KAFKA_TOPIC = "trades";
     public static final long LATENCY_REPORTING_THRESHOLD_MS = 10;
     public static final long WARMUP_REPORTING_INTERVAL_MS = SECONDS.toMillis(2);
     public static final long MEASUREMENT_REPORTING_INTERVAL_MS = SECONDS.toMillis(10);
     public static final long BENCHMARKING_DONE_REPORT_INTERVAL_MS = SECONDS.toMillis(1);
-    private static final String BENCHMARK_DONE_MESSAGE = "benchmarking is done";
+    public static final String BENCHMARK_DONE_MESSAGE = "benchmarking is done";
 
     public static void main(String[] args) {
-        System.out.println("Supplied arguments: " + Arrays.toString(args));
-        if (args.length != 12) {
-            System.err.println("Reads trade events from a Kafka topic named 'trades', performs sliding");
+        String propsPath = args.length > 0 ? args[0] : DEFAULT_PROPERTIES_FILENAME;
+        Properties props = loadProps(propsPath);
+        try {
+            String brokerUri = ensureProp(props, PROP_BROKER_URI);
+            String offsetReset = ensureProp(props, PROP_OFFSET_RESET);
+            int kafkaSourceParallelism = parseIntProp(props, PROP_KAFKA_SOURCE_LOCAL_PARALLELISM);
+            int lagMs = parseIntProp(props, PROP_ALLOWED_EVENT_LAG_MILLIS);
+            int windowSize = parseIntProp(props, PROP_WINDOW_SIZE_MILLIS);
+            int slideBy = parseIntProp(props, PROP_SLIDING_STEP_MILLIS);
+            String pgString = ensureProp(props, PROP_PROCESSING_GUARANTEE);
+            ProcessingGuarantee guarantee = ProcessingGuarantee.valueOf(pgString.toUpperCase().replace('-', '_'));
+            int snapshotInterval = parseIntProp(props, PROP_SNAPSHOT_INTERVAL_MILLIS);
+            int warmupSeconds = parseIntProp(props, PROP_WARMUP_SECONDS);
+            int measurementSeconds = parseIntProp(props, PROP_MEASUREMENT_SECONDS);
+            String outputPath = ensureProp(props, PROP_OUTPUT_PATH);
+            System.out.format(
+                    "Starting Jet Trade Monitor with the following parameters:%n" +
+                    "Kafka broker URI                  %s%n" +
+                    "Message offset auto-reset         %s%n" +
+                    "Local parallelism of Kafka source %,d%n" +
+                    "Allowed event lag                 %,d ms%n" +
+                    "Window size                       %,d ms%n" +
+                    "Window sliding step               %,d ms%n" +
+                    "Processing guarantee              %s%n" +
+                    "Snapshot interval                 %,d ms%n" +
+                    "Warmup period                     %,d seconds%n" +
+                    "Measurement period                %,d seconds%n" +
+                    "Output path                       %s%n",
+                        brokerUri,
+                        offsetReset,
+                        kafkaSourceParallelism,
+                        lagMs,
+                        windowSize,
+                        slideBy,
+                        guarantee,
+                        snapshotInterval,
+                        warmupSeconds,
+                        measurementSeconds,
+                        outputPath
+            );
+            Properties kafkaProps = createKafkaProperties(brokerUri, offsetReset);
+
+            Pipeline pipeline = Pipeline.create();
+            StreamStage<Tuple2<Long, Long>> latencies = pipeline
+                    .readFrom(KafkaSources.kafka(kafkaProps,
+                            (FunctionEx<ConsumerRecord<Object, Trade>, Trade>) ConsumerRecord::value,
+                            KAFKA_TOPIC))
+                    .withNativeTimestamps(lagMs)
+                    .setLocalParallelism(kafkaSourceParallelism)
+                    .groupingKey(Trade::getTicker)
+                    .window(sliding(windowSize, slideBy))
+                    .aggregate(counting())
+                    .mapStateful(DetermineLatency::new, DetermineLatency::map);
+            long warmupTimeMillis = SECONDS.toMillis(warmupSeconds);
+            long totalTimeMillis = SECONDS.toMillis(warmupSeconds + measurementSeconds);
+            latencies
+                    .filter(t2 -> t2.f0() < totalTimeMillis)
+                    .map(t2 -> String.format("%d,%d", t2.f0(), t2.f1()))
+                    .writeTo(Sinks.files(new File(outputPath, "latency-log").getPath()));
+            latencies
+                    .mapStateful(
+                            () -> new RecordLatencyHistogram(warmupTimeMillis, totalTimeMillis),
+                            RecordLatencyHistogram::map)
+                    .writeTo(Sinks.files(new File(outputPath, "latency-profile").getPath()));
+
+            JobConfig config = new JobConfig();
+            config.setName("JetTradeMonitor");
+            config.setSnapshotIntervalMillis(snapshotInterval);
+            config.setProcessingGuarantee(guarantee);
+
+            JetInstance jet = Jet.bootstrappedInstance();
+            Job job = jet.newJob(pipeline, config);
+            Runtime.getRuntime().addShutdownHook(new Thread(job::cancel));
+            System.out.println("Benchmarking job is now in progress, let it run until you see the message");
+            System.out.println("\"" + BENCHMARK_DONE_MESSAGE + "\" in the Jet server log,");
+            System.out.println("and then stop it here with Ctrl-C. The result files are on the server.");
+            job.join();
+        } catch (ValidationException e) {
+            System.err.println(e.getMessage());
+            System.err.println();
+            System.err.println("Reads trade events from a Kafka topic named \"" + KAFKA_TOPIC + "\", performs sliding");
             System.err.println("window aggregation on them and records the pipeline's latency:");
             System.err.println("how much after the window's end timestamp was Jet able to emit the first");
             System.err.println("key-value pair of the window result.");
             System.err.println("Usage:");
-            System.err.println("  " + JetTradeMonitor.class.getSimpleName() +
-                    " <Kafka broker URI> <message offset auto-reset> <message type> \\");
-            System.err.println("    <Kafka source local parallelism> <allowed event lag ms> \\");
-            System.err.println("    <window size ms> <sliding step ms> \\");
-            System.err.println("    <processing guarantee> <snapshot interval ms> \\");
-            System.err.println("    <warmup seconds> <measurement seconds> <output path>");
+            System.err.println("    " + JetTradeMonitor.class.getSimpleName() + " [props-file]");
             System.err.println();
-            System.err.println("Processing guarantee is one of \"none\", \"exactly-once\", \"at-least-once\"");
-            System.err.println("Message type is one of \"byte\", \"object\"");
-            System.err.println("You can use underscore in the numbers, for example 1_000_000.");
+            System.err.println(
+                    "The default properties file is " + DEFAULT_PROPERTIES_FILENAME + " in the current directory");
+            System.err.println("An example of the required properties:");
+            System.err.println(PROP_BROKER_URI + "=localhost:9092");
+            System.err.println("# earliest or latest:");
+            System.err.println(PROP_OFFSET_RESET + "=latest");
+            System.err.println(PROP_KAFKA_SOURCE_LOCAL_PARALLELISM + "=4");
+            System.err.println(PROP_ALLOWED_EVENT_LAG_MILLIS + "=0");
+            System.err.println(PROP_WINDOW_SIZE_MILLIS + "=1_000");
+            System.err.println(PROP_SLIDING_STEP_MILLIS + "=10");
+            System.err.println("# none, at-least-once or exactly-once:");
+            System.err.println(PROP_PROCESSING_GUARANTEE + "=at-least-once");
+            System.err.println(PROP_SNAPSHOT_INTERVAL_MILLIS + "=10_000");
+            System.err.println(PROP_WARMUP_SECONDS + "=40");
+            System.err.println(PROP_MEASUREMENT_SECONDS + "=240");
+            System.err.println(PROP_OUTPUT_PATH + "=benchmark-results");
             System.exit(1);
         }
-        System.setProperty("hazelcast.logging.type", "log4j2");
-        Logger logger = Logger.getLogger(JetTradeMonitor.class);
-        String brokerUri = args[0];
-        String offsetReset = args[1];
-        MessageType messageType = MessageType.valueOf(args[2].toUpperCase());
-        int kafkaSourceParallelism = parseIntArg(args[3]);
-        int lagMs = parseIntArg(args[4]);
-        int windowSize = parseIntArg(args[5]);
-        int slideBy = parseIntArg(args[6]);
-        ProcessingGuarantee guarantee = ProcessingGuarantee.valueOf(args[7].toUpperCase().replace('-', '_'));
-        int snapshotInterval = parseIntArg(args[8]);
-        int warmupSeconds = parseIntArg(args[9]);
-        int measurementSeconds = parseIntArg(args[10]);
-        String outputPath = args[11];
-        logger.info(String.format("" +
-                        "Starting Jet Trade Monitor with the following parameters:%n" +
-                        "Kafka broker URI                  %s%n" +
-                        "Message offset auto-reset         %s%n" +
-                        "Message type                      %s%n" +
-                        "Local parallelism of Kafka source %,d%n" +
-                        "Allowed event lag                 %,d ms%n" +
-                        "Window size                       %,d ms%n" +
-                        "Window sliding step               %,d ms%n" +
-                        "Processing guarantee              %s%n" +
-                        "Snapshot interval                 %,d ms%n" +
-                        "Warmup period                     %,d seconds%n" +
-                        "Measurement period                %,d seconds%n" +
-                        "Output path                       %s%n",
-                brokerUri,
-                offsetReset,
-                messageType,
-                kafkaSourceParallelism,
-                lagMs,
-                windowSize,
-                slideBy,
-                guarantee,
-                snapshotInterval,
-                warmupSeconds,
-                measurementSeconds,
-                outputPath
-        ));
-        Properties kafkaProps = getKafkaProperties(brokerUri, offsetReset, messageType);
-
-        Pipeline pipeline = Pipeline.create();
-        StreamStage<Trade> sourceStage;
-        if (messageType == BYTE) {
-            sourceStage = pipeline
-                    .readFrom(KafkaSources.kafka(kafkaProps,
-                            (ConsumerRecord<Object, byte[]> record) -> record.value(),
-                            KAFKA_TOPIC))
-                    .withoutTimestamps()
-                    .mapUsingService(sharedService(ctx -> new Deserializer()), Deserializer::deserialize)
-                    .addTimestamps(Trade::getTime, lagMs)
-                    .setLocalParallelism(kafkaSourceParallelism);
-        } else {
-            sourceStage = pipeline
-                    .readFrom(KafkaSources.kafka(kafkaProps,
-                            (ConsumerRecord<Object, Trade> record) -> record.value(),
-                            KAFKA_TOPIC))
-                    .withTimestamps(Trade::getTime, lagMs)
-                    .setLocalParallelism(kafkaSourceParallelism);
-        }
-        StreamStage<Tuple2<Long, Long>> latencies = sourceStage
-                .groupingKey(Trade::getTicker)
-                .window(sliding(windowSize, slideBy))
-                .aggregate(counting())
-                .mapStateful(DetermineLatency::new, DetermineLatency::map);
-        long warmupTimeMillis = SECONDS.toMillis(warmupSeconds);
-        long totalTimeMillis = SECONDS.toMillis(warmupSeconds + measurementSeconds);
-        latencies
-                .filter(t2 -> t2.f0() < totalTimeMillis)
-                .map(t2 -> String.format("%d,%d", t2.f0(), t2.f1()))
-                .writeTo(Sinks.files(new File(outputPath, "latency-log").getPath()));
-        latencies
-                .mapStateful(
-                        () -> new RecordLatencyHistogram(warmupTimeMillis, totalTimeMillis),
-                        RecordLatencyHistogram::map)
-                .writeTo(Sinks.files(new File(outputPath, "latency-profile").getPath()));
-
-        JobConfig config = new JobConfig();
-        config.setName("JetTradeMonitor");
-        config.setSnapshotIntervalMillis(snapshotInterval);
-        config.setProcessingGuarantee(guarantee);
-
-        JetInstance jet = Jet.bootstrappedInstance();
-        Job job = jet.newJob(pipeline, config);
-        Runtime.getRuntime().addShutdownHook(new Thread(job::cancel));
-        System.out.println("Benchmarking job is now in progress, let it run until you see the message");
-        System.out.println("\"" + BENCHMARK_DONE_MESSAGE + "\" in the Jet server log,");
-        System.out.println("and then stop it here with Ctrl-C. The result files are on the server.");
-        job.join();
     }
 
-    private static int parseIntArg(String arg) {
-        return Integer.parseInt(arg.replace("_", ""));
+    private static Properties createKafkaProperties(String brokerUrl, String offsetReset) {
+        return props(
+                "bootstrap.servers", brokerUrl,
+                "group.id", UUID.randomUUID().toString(),
+                "key.deserializer", LongDeserializer.class.getName(),
+                "value.deserializer", TradeDeserializer.class.getName(),
+                "auto.offset.reset", offsetReset,
+                "max.poll.records", "32768"
+        );
     }
 
     private static class DetermineLatency implements Serializable {
@@ -234,51 +246,6 @@ public class JetTradeMonitor {
             histogram.outputPercentileDistribution(out, 1.0);
             out.close();
             return bos.toString();
-        }
-    }
-
-    private static Properties getKafkaProperties(String brokerUrl, String offsetReset, MessageType messageType) {
-        Properties props = new Properties();
-        props.setProperty("bootstrap.servers", brokerUrl);
-        props.setProperty("group.id", UUID.randomUUID().toString());
-        props.setProperty("key.deserializer", LongDeserializer.class.getName());
-        props.setProperty("value.deserializer",
-                (messageType == BYTE ? ByteArrayDeserializer.class : TradeDeserializer.class).getName());
-        props.setProperty("auto.offset.reset", offsetReset);
-        props.setProperty("max.poll.records", "32768");
-        //props.setProperty("metadata.max.age.ms", "5000");
-        return props;
-    }
-
-    private static class Deserializer {
-        final ResettableByteArrayInputStream is = new ResettableByteArrayInputStream();
-        final DataInputStream ois = new DataInputStream(is);
-
-        Trade deserialize(byte[] bytes) {
-            is.setBuffer(bytes);
-            try {
-                String ticker = ois.readUTF();
-                long time = ois.readLong();
-                int price = ois.readInt();
-                int quantity = ois.readInt();
-                return new Trade(time, ticker, quantity, price);
-            } catch (Exception e) {
-                throw new RuntimeException(e);
-            }
-        }
-    }
-
-    private static class ResettableByteArrayInputStream extends ByteArrayInputStream {
-
-        ResettableByteArrayInputStream() {
-            super(new byte[0]);
-        }
-
-        void setBuffer(byte[] data) {
-            super.buf = data;
-            super.pos = 0;
-            super.mark = 0;
-            super.count = data.length;
         }
     }
 }
