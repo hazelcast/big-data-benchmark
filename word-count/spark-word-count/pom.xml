@@ -29,7 +29,8 @@
     <dependencies>
         <dependency>
             <groupId>org.apache.spark</groupId>
-            <artifactId>spark-core_${scala.version}</artifactId>
+            <artifactId>spark-core_${spark.scala.version}</artifactId>
+            <version>${spark.version}</version>
         </dependency>
     </dependencies>
 </project>

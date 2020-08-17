@@ -49,17 +49,19 @@
 
     <dependencies>
         <dependency>
+            <groupId>com.hazelcast.jet.benchmark</groupId>
+            <artifactId>kafka-trade-producer</artifactId>
+            <version>${project.version}</version>
+        </dependency>
+        <dependency>
             <groupId>com.hazelcast.jet</groupId>
             <artifactId>hazelcast-jet</artifactId>
+            <version>${jet.version}</version>
         </dependency>
         <dependency>
             <groupId>com.hazelcast.jet</groupId>
             <artifactId>hazelcast-jet-kafka</artifactId>
-        </dependency>
-        <dependency>
-            <groupId>com.hazelcast.jet.benchmark</groupId>
-            <artifactId>kafka-trade-producer</artifactId>
-            <version>${project.version}</version>
+            <version>${jet.version}</version>
         </dependency>
         <dependency>
             <groupId>org.hdrhistogram</groupId>

@@ -44,18 +44,16 @@
             <artifactId>kafka-trade-producer</artifactId>
             <version>${project.version}</version>
         </dependency>
-        <!--<dependency>-->
-            <!--<groupId>org.apache.spark</groupId>-->
-            <!--<artifactId>spark-core_${scala.version}</artifactId>-->
-        <!--</dependency>-->
         <dependency>
             <groupId>org.apache.spark</groupId>
-            <artifactId>spark-streaming_${scala.version}</artifactId>
             <scope>provided</scope>
+            <artifactId>spark-streaming_${spark.scala.version}</artifactId>
+            <version>${spark.version}</version>
         </dependency>
         <dependency>
             <groupId>org.apache.spark</groupId>
-            <artifactId>spark-streaming-kafka-0-10_${scala.version}</artifactId>
+            <artifactId>spark-streaming-kafka-0-10_${spark.scala.version}</artifactId>
+            <version>${spark.version}</version>
         </dependency>
         <dependency>
             <groupId>log4j</groupId>
