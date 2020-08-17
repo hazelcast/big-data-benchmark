@@ -19,10 +19,14 @@ package com.hazelcast.jet.benchmark.trademonitor;
 public class Trade {
     public static final int TICKER_MAX_LENGTH = 5;
 
-    private final long time;
-    private final String ticker;
-    private final int quantity;
-    private final int price; // in cents
+    private long time;
+    private String ticker;
+    private int quantity;
+    private int price; // in cents
+
+    // Flink loves JavaBeans
+    public Trade() {
+    }
 
     Trade(long time, String ticker, int quantity, int price) {
         this.time = time;
@@ -35,16 +39,32 @@ public class Trade {
         return time;
     }
 
+    public void setTime(long time) {
+        this.time = time;
+    }
+
     public String getTicker() {
         return ticker;
+    }
+
+    public void setTicker(String ticker) {
+        this.ticker = ticker;
     }
 
     public int getQuantity() {
         return quantity;
     }
 
+    public void setQuantity(int quantity) {
+        this.quantity = quantity;
+    }
+
     public int getPrice() {
         return price;
+    }
+
+    public void setPrice(int price) {
+        this.price = price;
     }
 
     @Override

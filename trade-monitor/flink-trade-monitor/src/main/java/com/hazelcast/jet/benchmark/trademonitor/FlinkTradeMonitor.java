@@ -16,157 +16,243 @@
 
 package com.hazelcast.jet.benchmark.trademonitor;
 
+import com.hazelcast.jet.benchmark.ValidationException;
 import org.apache.commons.lang3.mutable.MutableLong;
+import org.apache.flink.api.common.eventtime.WatermarkStrategy;
 import org.apache.flink.api.common.functions.AggregateFunction;
 import org.apache.flink.api.common.restartstrategy.RestartStrategies;
+import org.apache.flink.api.common.serialization.AbstractDeserializationSchema;
+import org.apache.flink.api.common.serialization.DeserializationSchema;
+import org.apache.flink.api.common.serialization.SimpleStringEncoder;
 import org.apache.flink.contrib.streaming.state.RocksDBStateBackend;
-import org.apache.flink.core.fs.FileSystem.WriteMode;
+import org.apache.flink.core.fs.Path;
+import org.apache.flink.runtime.state.StateBackend;
 import org.apache.flink.runtime.state.filesystem.FsStateBackend;
 import org.apache.flink.streaming.api.TimeCharacteristic;
 import org.apache.flink.streaming.api.datastream.DataStreamSource;
 import org.apache.flink.streaming.api.environment.StreamExecutionEnvironment;
-import org.apache.flink.streaming.api.functions.AssignerWithPeriodicWatermarks;
-import org.apache.flink.streaming.api.functions.timestamps.BoundedOutOfOrdernessTimestampExtractor;
+import org.apache.flink.streaming.api.functions.sink.filesystem.StreamingFileSink;
 import org.apache.flink.streaming.api.functions.windowing.WindowFunction;
 import org.apache.flink.streaming.api.windowing.assigners.SlidingEventTimeWindows;
 import org.apache.flink.streaming.api.windowing.assigners.TumblingEventTimeWindows;
 import org.apache.flink.streaming.api.windowing.assigners.WindowAssigner;
 import org.apache.flink.streaming.api.windowing.time.Time;
 import org.apache.flink.streaming.api.windowing.windows.TimeWindow;
-import org.apache.flink.streaming.connectors.kafka.FlinkKafkaConsumer010;
-import org.apache.flink.streaming.util.serialization.AbstractDeserializationSchema;
-import org.apache.flink.streaming.util.serialization.DeserializationSchema;
+import org.apache.flink.streaming.connectors.kafka.FlinkKafkaConsumer;
 import org.apache.flink.util.Collector;
-import org.apache.kafka.common.serialization.LongDeserializer;
+import org.apache.kafka.common.serialization.IntegerDeserializer;
 
+import java.io.File;
 import java.io.IOException;
 import java.util.Properties;
 import java.util.UUID;
 
+import static com.hazelcast.jet.benchmark.Util.KAFKA_TOPIC;
+import static com.hazelcast.jet.benchmark.Util.ensureProp;
+import static com.hazelcast.jet.benchmark.Util.loadProps;
+import static com.hazelcast.jet.benchmark.Util.parseBooleanProp;
+import static com.hazelcast.jet.benchmark.Util.parseIntProp;
+import static com.hazelcast.jet.benchmark.Util.props;
 
 public class FlinkTradeMonitor {
+    public static final String DEFAULT_PROPERTIES_FILENAME = "flink-trade-monitor.properties";
+    public static final String PROP_BROKER_URI = "broker-uri";
+    public static final String PROP_OFFSET_RESET = "offset-reset";
+    public static final String PROP_KAFKA_SOURCE_PARALLELISM = "kafka-source-parallelism";
+    public static final String PROP_AGGREGATION_PARALLELISM = "aggregation-parallelism";
+    public static final String PROP_WINDOW_SIZE_MILLIS = "window-size-millis";
+    public static final String PROP_SLIDING_STEP_MILLIS = "sliding-step-millis";
+    public static final String PROP_CHECKPOINT_URI = "checkpoint-uri";
+    public static final String PROP_CHECKPOINT_INTERVAL_MILLIS = "checkpoint-interval-millis";
+    public static final String PROP_ASYNCHRONOUS_SNAPSHOTS = "asynchronous-snapshots";
+    public static final String PROP_STATE_BACKEND = "state-backend";
+    public static final String STATE_BACKEND_FS = "fs";
+    public static final String STATE_BACKEND_ROCKSDB = "rocksdb";
+    public static final String PROP_WARMUP_SECONDS = "warmup-seconds";
+    public static final String PROP_MEASUREMENT_SECONDS = "measurement-seconds";
+    public static final String PROP_OUTPUT_PATH = "output-path";
 
-    public static void main(String[] args) throws Exception {
-        if (args.length != 13) {
+    public static void main(String[] args) {
+        String propsPath = args.length > 0 ? args[0] : DEFAULT_PROPERTIES_FILENAME;
+        Properties props = loadProps(propsPath);
+        StreamExecutionEnvironment env;
+        try {
+            String brokerUri = ensureProp(props, PROP_BROKER_URI);
+            String offsetReset = ensureProp(props, PROP_OFFSET_RESET);
+            int kafkaSourceParallelism = parseIntProp(props, PROP_KAFKA_SOURCE_PARALLELISM);
+            int windowSize = parseIntProp(props, PROP_WINDOW_SIZE_MILLIS);
+            int slideBy = parseIntProp(props, PROP_SLIDING_STEP_MILLIS);
+            int aggregationParallelism = parseIntProp(props, PROP_AGGREGATION_PARALLELISM);
+            int checkpointInterval = parseIntProp(props, PROP_CHECKPOINT_INTERVAL_MILLIS);
+            String checkpointUri = ensureProp(props, PROP_CHECKPOINT_URI);
+            boolean asyncSnapshots = parseBooleanProp(props, PROP_ASYNCHRONOUS_SNAPSHOTS);
+            String stateBackendProp = ensureProp(props, PROP_STATE_BACKEND);
+            int warmupSeconds = parseIntProp(props, PROP_WARMUP_SECONDS);
+            int measurementSeconds = parseIntProp(props, PROP_MEASUREMENT_SECONDS);
+            String outputPath = ensureProp(props, PROP_OUTPUT_PATH);
+            System.out.format(
+                    "Starting Flink Trade Monitor with the following parameters:%n" +
+                    "Kafka broker URI                  %s%n" +
+                    "Message offset auto-reset         %s%n" +
+                    "Parallelism of Kafka source       %,d%n" +
+                    "Window size                       %,d ms%n" +
+                    "Window sliding step               %,d ms%n" +
+                    "Parallelism of aggregation        %,d%n" +
+                    "Checkpointing interval            %,d ms%n" +
+                    "Checkpoint URI                    %s%n" +
+                    "Asynchronous snapshots?           %b%n" +
+                    "State backend                     %s%n" +
+                    "Warmup period                     %,d seconds%n" +
+                    "Measurement period                %,d seconds%n" +
+                    "Output path                       %s%n",
+                            brokerUri,
+                            offsetReset,
+                            kafkaSourceParallelism,
+                            windowSize,
+                            slideBy,
+                            aggregationParallelism,
+                            checkpointInterval,
+                            checkpointUri,
+                            asyncSnapshots,
+                            stateBackendProp,
+                            warmupSeconds,
+                            measurementSeconds,
+                            outputPath
+            );
+            env = StreamExecutionEnvironment.getExecutionEnvironment();
+            env.setStreamTimeCharacteristic(TimeCharacteristic.EventTime);
+            if (checkpointInterval > 0) {
+                env.enableCheckpointing(checkpointInterval);
+                env.getCheckpointConfig().setMinPauseBetweenCheckpoints(checkpointInterval);
+            }
+            env.setRestartStrategy(RestartStrategies.fixedDelayRestart(Integer.MAX_VALUE, 5000));
+            StateBackend stateBackend;
+            if (STATE_BACKEND_FS.equalsIgnoreCase(stateBackendProp)) {
+                stateBackend = new FsStateBackend(checkpointUri, asyncSnapshots);
+            } else if (STATE_BACKEND_ROCKSDB.equalsIgnoreCase(stateBackendProp)) {
+                stateBackend = new RocksDBStateBackend(checkpointUri);
+            } else {
+                System.err.println("state-backend must be either \"" + STATE_BACKEND_FS + "\" or \"" +
+                        STATE_BACKEND_ROCKSDB + "\", but is \"" + stateBackendProp + "\"");
+                System.exit(1);
+                return;
+            }
+            env.setStateBackend(stateBackend);
+
+            DataStreamSource<Trade> trades = env
+                    .addSource(new FlinkKafkaConsumer<>(
+                            KAFKA_TOPIC, tradeDeserializationSchema(), createKafkaProperties(brokerUri, offsetReset)))
+                    .setParallelism(kafkaSourceParallelism);
+
+            WindowAssigner<Object, TimeWindow> window = windowSize == slideBy ?
+                    TumblingEventTimeWindows.of(Time.milliseconds(windowSize)) :
+                    SlidingEventTimeWindows.of(Time.milliseconds(windowSize), Time.milliseconds(slideBy));
+
+            trades.assignTimestampsAndWatermarks(WatermarkStrategy
+                    .<Trade>forMonotonousTimestamps()
+                    .withTimestampAssigner((trade, timestamp) -> trade.getTime()))
+                  .keyBy(Trade::getTicker)
+                  .window(window)
+                  .aggregate(counting(), determineLatency())
+                  .setParallelism(aggregationParallelism)
+                  .addSink(StreamingFileSink
+                          .forRowFormat(Path.fromLocalFile(new File(outputPath)), new SimpleStringEncoder<Long>())
+                          .build());
+        } catch (ValidationException | IOException e) {
+            System.err.println(e.getMessage());
+            System.err.println();
+            System.err.println("Reads trade events from a Kafka topic named \"" + KAFKA_TOPIC + "\", performs sliding");
+            System.err.println("window aggregation on them and records the pipeline's latency:");
+            System.err.println("how much after the window's end timestamp was Flink able to emit the first");
+            System.err.println("key-value pair of the window result.");
             System.err.println("Usage:");
-            System.err.println("  " + FlinkTradeMonitor.class.getSimpleName() +
-                    " <bootstrap.servers> <topic> <offset-reset> <maxLagMs> <windowSizeMs> <slideByMs> <outputPath> <checkpointInterval> <checkpointUri> <doAsyncSnapshot> <stateBackend> <kafkaParallelism> <windowParallelism>");
-            System.err.println("<stateBackend> - fs | rocksDb");
+            System.err.println("    " + FlinkTradeMonitor.class.getSimpleName() + " [props-file]");
+            System.err.println();
+            System.err.println(
+                    "The default properties file is " + DEFAULT_PROPERTIES_FILENAME + " in the current directory.");
+            System.err.println();
+            System.err.println("An example of the required properties:");
+            System.err.println(PROP_BROKER_URI + "=localhost:9092");
+            System.err.println("# earliest or latest:");
+            System.err.println(PROP_OFFSET_RESET + "=latest");
+            System.err.println(PROP_KAFKA_SOURCE_PARALLELISM + "=4");
+            System.err.println(PROP_AGGREGATION_PARALLELISM + "=12");
+            System.err.println(PROP_WINDOW_SIZE_MILLIS + "=1_000");
+            System.err.println(PROP_SLIDING_STEP_MILLIS + "=10");
+            System.err.println(PROP_CHECKPOINT_URI + "=??");
+            System.err.println(PROP_CHECKPOINT_INTERVAL_MILLIS + "=10_000");
+            System.err.println(PROP_ASYNCHRONOUS_SNAPSHOTS + "=true");
+            System.err.println("# fs or rocksdb:");
+            System.err.println(PROP_STATE_BACKEND + "=fs");
+            System.err.println(PROP_WARMUP_SECONDS + "=40");
+            System.err.println(PROP_MEASUREMENT_SECONDS + "=240");
+            System.err.println(PROP_OUTPUT_PATH + "=benchmark-results");
             System.exit(1);
+            return;
         }
-        String brokerUri = args[0];
-        String topic = args[1];
-        String offsetReset = args[2];
-        int lagMs = Integer.parseInt(args[3]);
-        int windowSize = Integer.parseInt(args[4]);
-        int slideBy = Integer.parseInt(args[5]);
-        String outputPath = args[6];
-        int checkpointInt = Integer.parseInt(args[7]);
-        String checkpointUri = args[8];
-        boolean doAsyncSnapshot = Boolean.parseBoolean(args[9]);
-        String stateBackend = args[10];
-        int kafkaParallelism = Integer.parseInt(args[11]);
-        int windowParallelism = Integer.parseInt(args[12]);
-
-        System.out.println("bootstrap.servers: " + brokerUri);
-        System.out.println("topic: " + topic);
-        System.out.println("offset-reset: " + offsetReset);
-        System.out.println("lag: " + lagMs);
-        System.out.println("windowSize: " + windowSize);
-        System.out.println("slideBy: " + slideBy);
-        System.out.println("outputPath: " + outputPath);
-        System.out.println("checkpointInt: " + checkpointInt);
-        System.out.println("checkpointUri: " + checkpointUri);
-        System.out.println("doAsyncSnapshot: " + doAsyncSnapshot);
-        System.out.println("stateBackend: " + stateBackend);
-        System.out.println("kafkaParallelism: " + kafkaParallelism);
-        System.out.println("windowParallelism: " + windowParallelism);
-
-        // set up the execution environment
-        StreamExecutionEnvironment env = StreamExecutionEnvironment.getExecutionEnvironment();
-        env.setStreamTimeCharacteristic(TimeCharacteristic.EventTime);
-        if (checkpointInt > 0) {
-            env.enableCheckpointing(checkpointInt);
-            env.getCheckpointConfig().setMinPauseBetweenCheckpoints(checkpointInt);
+        try {
+            env.execute("Trade Monitor Example");
+        } catch (Exception e) {
+            System.err.println("Job execution failed");
+            e.printStackTrace();
         }
-        env.setRestartStrategy(RestartStrategies.fixedDelayRestart(Integer.MAX_VALUE, 5000));
-        if ("fs".equalsIgnoreCase(stateBackend)) {
-            env.setStateBackend(new FsStateBackend(checkpointUri, doAsyncSnapshot));
-        } else if ("rocksDb".equalsIgnoreCase(stateBackend)) {
-            env.setStateBackend(new RocksDBStateBackend(checkpointUri));
-        } else {
-            System.err.println("Bad value for stateBackend: " + stateBackend);
-            System.exit(1);
-        }
+    }
 
-        DeserializationSchema<Trade> schema = new AbstractDeserializationSchema<Trade>() {
-            TradeDeserializer deserializer = new TradeDeserializer();
+    private static WindowFunction<Long, Long, String, TimeWindow> determineLatency() {
+        // Anonymous class for Flink to get type parameters through reflection
+        return new WindowFunction<Long, Long, String, TimeWindow>() {
+            @Override
+            public void apply(String key, TimeWindow win, Iterable<Long> input, Collector<Long> out) {
+                out.collect(System.currentTimeMillis() - win.getEnd());
+            }
+        };
+    }
+
+    private static Properties createKafkaProperties(String brokerUrl, String offsetReset) {
+        return props(
+                "bootstrap.servers", brokerUrl,
+                "group.id", UUID.randomUUID().toString(),
+                "key.deserializer", IntegerDeserializer.class.getName(),
+                "value.deserializer", TradeDeserializer.class.getName(),
+                "auto.offset.reset", offsetReset,
+                "max.poll.records", "32768"
+        );
+    }
+
+    private static DeserializationSchema<Trade> tradeDeserializationSchema() {
+        return new AbstractDeserializationSchema<Trade>() {
+            private final TradeDeserializer deserializer = new TradeDeserializer();
 
             @Override
-            public Trade deserialize(byte[] message) throws IOException {
+            public Trade deserialize(byte[] message) {
                 return deserializer.deserialize(null, message);
             }
         };
-
-        DataStreamSource<Trade> trades = env.addSource(new FlinkKafkaConsumer010<>(topic,
-                schema, getKafkaProperties(brokerUri, offsetReset))).setParallelism(kafkaParallelism);
-        AssignerWithPeriodicWatermarks<Trade> timestampExtractor
-                = new BoundedOutOfOrdernessTimestampExtractor<Trade>(Time.milliseconds(lagMs)) {
-            @Override
-            public long extractTimestamp(Trade element) {
-                return element.getTime();
-            }
-        };
-
-        WindowAssigner<Object, TimeWindow> window = windowSize == slideBy ?
-                TumblingEventTimeWindows.of(Time.milliseconds(windowSize)) :
-                SlidingEventTimeWindows.of(Time.milliseconds(windowSize), Time.milliseconds(slideBy));
-
-        trades
-                .assignTimestampsAndWatermarks(timestampExtractor)
-                .keyBy(Trade::getTicker)
-                .window(window)
-                .aggregate(new AggregateFunction<Trade, MutableLong, Long>() {
-                    @Override
-                    public MutableLong createAccumulator() {
-                        return new MutableLong();
-                    }
-
-                    @Override
-                    public MutableLong add(Trade value, MutableLong accumulator) {
-                        accumulator.increment();
-                        return accumulator;
-                    }
-
-                    @Override
-                    public MutableLong merge(MutableLong a, MutableLong b) {
-                        a.setValue(Math.addExact(a.longValue(), b.longValue()));
-                        return a;
-                    }
-
-                    @Override
-                    public Long getResult(MutableLong accumulator) {
-                        return accumulator.longValue();
-                    }
-                }, new WindowFunction<Long, Long, String, TimeWindow>() {
-                    @Override public void apply(String key, TimeWindow win, Iterable<Long> input, Collector<Long> out) {
-                        out.collect(System.currentTimeMillis() - win.getEnd() - lagMs);
-                    }
-                })
-                .setParallelism(windowParallelism)
-                .writeAsText(outputPath, WriteMode.OVERWRITE);
-
-        env.execute("Trade Monitor Example");
     }
 
-    private static Properties getKafkaProperties(String brokerUrl, String offsetReset) {
-        Properties props = new Properties();
-        props.setProperty("bootstrap.servers", brokerUrl);
-        props.setProperty("group.id", UUID.randomUUID().toString());
-        props.setProperty("key.deserializer", LongDeserializer.class.getName());
-        props.setProperty("value.deserializer", TradeDeserializer.class.getName());
-        props.setProperty("auto.offset.reset", offsetReset);
-        props.setProperty("max.poll.records", "32768");
-        return props;
+    private static AggregateFunction<Trade, MutableLong, Long> counting() {
+        return new AggregateFunction<Trade, MutableLong, Long>() {
+            @Override
+            public MutableLong createAccumulator () {
+                return new MutableLong();
+            }
+
+            @Override
+            public MutableLong add (Trade value, MutableLong accumulator){
+                accumulator.increment();
+                return accumulator;
+            }
+
+            @Override
+            public MutableLong merge (MutableLong a, MutableLong b){
+                a.setValue(Math.addExact(a.longValue(), b.longValue()));
+                return a;
+            }
+
+            @Override
+            public Long getResult (MutableLong accumulator){
+                return accumulator.longValue();
+            }
+        };
     }
 }

@@ -7,6 +7,8 @@ import java.io.IOException;
 import java.util.Properties;
 
 public final class Util {
+    public static final String KAFKA_TOPIC = "trades";
+
     private Util() {
     }
 
@@ -59,6 +61,15 @@ public final class Util {
             return Integer.parseInt(prop.replace("_", ""));
         } catch (NumberFormatException e) {
             throw new ValidationException("Invalid property format, correct example is 9_999: " + propName + "=" + prop);
+        }
+    }
+
+    public static boolean parseBooleanProp(Properties props, String propName) throws ValidationException {
+        String prop = ensureProp(props, propName);
+        try {
+            return Boolean.parseBoolean(prop);
+        } catch (NumberFormatException e) {
+            throw new ValidationException("Invalid property format, expected true or false: " + propName + "=" + prop);
         }
     }
 

@@ -25,6 +25,7 @@ import java.util.Properties;
 import java.util.UUID;
 
 import static com.hazelcast.jet.aggregate.AggregateOperations.counting;
+import static com.hazelcast.jet.benchmark.Util.KAFKA_TOPIC;
 import static com.hazelcast.jet.benchmark.Util.ensureProp;
 import static com.hazelcast.jet.benchmark.Util.loadProps;
 import static com.hazelcast.jet.benchmark.Util.parseIntProp;
@@ -38,7 +39,6 @@ public class JetTradeMonitor {
     public static final String PROP_BROKER_URI = "broker-uri";
     public static final String PROP_OFFSET_RESET = "offset-reset";
     public static final String PROP_KAFKA_SOURCE_LOCAL_PARALLELISM = "kafka-source-local-parallelism";
-    public static final String PROP_ALLOWED_EVENT_LAG_MILLIS = "allowed-event-lag-millis";
     public static final String PROP_WINDOW_SIZE_MILLIS = "window-size-millis";
     public static final String PROP_SLIDING_STEP_MILLIS = "sliding-step-millis";
     public static final String PROP_PROCESSING_GUARANTEE = "processing-guarantee";
@@ -46,7 +46,6 @@ public class JetTradeMonitor {
     public static final String PROP_WARMUP_SECONDS = "warmup-seconds";
     public static final String PROP_MEASUREMENT_SECONDS = "measurement-seconds";
     public static final String PROP_OUTPUT_PATH = "output-path";
-    public static final String KAFKA_TOPIC = "trades";
     public static final long LATENCY_REPORTING_THRESHOLD_MS = 10;
     public static final long WARMUP_REPORTING_INTERVAL_MS = SECONDS.toMillis(2);
     public static final long MEASUREMENT_REPORTING_INTERVAL_MS = SECONDS.toMillis(10);
@@ -60,7 +59,6 @@ public class JetTradeMonitor {
             String brokerUri = ensureProp(props, PROP_BROKER_URI);
             String offsetReset = ensureProp(props, PROP_OFFSET_RESET);
             int kafkaSourceParallelism = parseIntProp(props, PROP_KAFKA_SOURCE_LOCAL_PARALLELISM);
-            int lagMs = parseIntProp(props, PROP_ALLOWED_EVENT_LAG_MILLIS);
             int windowSize = parseIntProp(props, PROP_WINDOW_SIZE_MILLIS);
             int slideBy = parseIntProp(props, PROP_SLIDING_STEP_MILLIS);
             String pgString = ensureProp(props, PROP_PROCESSING_GUARANTEE);
@@ -74,7 +72,6 @@ public class JetTradeMonitor {
                     "Kafka broker URI                  %s%n" +
                     "Message offset auto-reset         %s%n" +
                     "Local parallelism of Kafka source %,d%n" +
-                    "Allowed event lag                 %,d ms%n" +
                     "Window size                       %,d ms%n" +
                     "Window sliding step               %,d ms%n" +
                     "Processing guarantee              %s%n" +
@@ -82,17 +79,16 @@ public class JetTradeMonitor {
                     "Warmup period                     %,d seconds%n" +
                     "Measurement period                %,d seconds%n" +
                     "Output path                       %s%n",
-                        brokerUri,
-                        offsetReset,
-                        kafkaSourceParallelism,
-                        lagMs,
-                        windowSize,
-                        slideBy,
-                        guarantee,
-                        snapshotInterval,
-                        warmupSeconds,
-                        measurementSeconds,
-                        outputPath
+                            brokerUri,
+                            offsetReset,
+                            kafkaSourceParallelism,
+                            windowSize,
+                            slideBy,
+                            guarantee,
+                            snapshotInterval,
+                            warmupSeconds,
+                            measurementSeconds,
+                            outputPath
             );
             Properties kafkaProps = createKafkaProperties(brokerUri, offsetReset);
 
@@ -101,7 +97,7 @@ public class JetTradeMonitor {
                     .readFrom(KafkaSources.kafka(kafkaProps,
                             (FunctionEx<ConsumerRecord<Object, Trade>, Trade>) ConsumerRecord::value,
                             KAFKA_TOPIC))
-                    .withNativeTimestamps(lagMs)
+                    .withNativeTimestamps(0)
                     .setLocalParallelism(kafkaSourceParallelism)
                     .groupingKey(Trade::getTicker)
                     .window(sliding(windowSize, slideBy))
@@ -142,13 +138,13 @@ public class JetTradeMonitor {
             System.err.println("    " + JetTradeMonitor.class.getSimpleName() + " [props-file]");
             System.err.println();
             System.err.println(
-                    "The default properties file is " + DEFAULT_PROPERTIES_FILENAME + " in the current directory");
+                    "The default properties file is " + DEFAULT_PROPERTIES_FILENAME + " in the current directory.");
+            System.err.println();
             System.err.println("An example of the required properties:");
             System.err.println(PROP_BROKER_URI + "=localhost:9092");
             System.err.println("# earliest or latest:");
             System.err.println(PROP_OFFSET_RESET + "=latest");
             System.err.println(PROP_KAFKA_SOURCE_LOCAL_PARALLELISM + "=4");
-            System.err.println(PROP_ALLOWED_EVENT_LAG_MILLIS + "=0");
             System.err.println(PROP_WINDOW_SIZE_MILLIS + "=1_000");
             System.err.println(PROP_SLIDING_STEP_MILLIS + "=10");
             System.err.println("# none, at-least-once or exactly-once:");
