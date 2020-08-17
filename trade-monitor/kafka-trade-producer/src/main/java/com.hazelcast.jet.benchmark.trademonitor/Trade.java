@@ -17,13 +17,14 @@
 package com.hazelcast.jet.benchmark.trademonitor;
 
 public class Trade {
+    public static final int TICKER_MAX_LENGTH = 5;
 
     private final long time;
-    private final int ticker;
+    private final String ticker;
     private final int quantity;
     private final int price; // in cents
 
-    Trade(long time, int ticker, int quantity, int price) {
+    Trade(long time, String ticker, int quantity, int price) {
         this.time = time;
         this.ticker = ticker;
         this.quantity = quantity;
@@ -34,7 +35,7 @@ public class Trade {
         return time;
     }
 
-    public int getTicker() {
+    public String getTicker() {
         return ticker;
     }
 

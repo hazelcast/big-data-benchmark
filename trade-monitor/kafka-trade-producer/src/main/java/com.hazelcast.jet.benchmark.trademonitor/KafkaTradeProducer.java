@@ -6,6 +6,10 @@ import org.apache.kafka.clients.producer.KafkaProducer;
 import org.apache.kafka.clients.producer.ProducerRecord;
 import org.apache.kafka.common.serialization.IntegerSerializer;
 
+import java.util.ArrayList;
+import java.util.Arrays;
+import java.util.Collections;
+import java.util.List;
 import java.util.Properties;
 import java.util.concurrent.ExecutorService;
 import java.util.concurrent.Executors;
@@ -34,14 +38,13 @@ public class KafkaTradeProducer implements Runnable {
     private static final long REPORT_PERIOD_SECONDS = 2;
 
     private final int threadIndex;
-    private final int tickerLow;
-    private final int tickerHigh;
     private final double tradesPerNanosecond;
     private final long startNanoTime;
     private final long nanoTimeMillisToCurrentTimeMillis;
     private final KafkaProducer<String, Trade> kafkaProducer;
+    private final String[] tickers;
 
-    private int currentTicker;
+    private int currentTickerIndex;
     private long lastReportNanoTime;
     private long nowNanos;
     private long producedCount;
@@ -51,7 +54,7 @@ public class KafkaTradeProducer implements Runnable {
     private KafkaTradeProducer(
             int threadIndex, int numThreads,
             KafkaProducer<String, Trade> kafkaProducer,
-            double tradesPerSecond, int keysPerThread,
+            double tradesPerSecond, String[] tickers,
             long startNanoTime, long nanoTimeMillisToCurrentTimeMillis
     ) {
         if (tradesPerSecond <= 0) {
@@ -63,9 +66,7 @@ public class KafkaTradeProducer implements Runnable {
         this.startNanoTime = (long) (startNanoTime + ((double) threadIndex / numThreads) / tradesPerNanosecond);
         this.lastReportNanoTime = startNanoTime;
         this.nanoTimeMillisToCurrentTimeMillis = nanoTimeMillisToCurrentTimeMillis;
-        tickerLow = keysPerThread * threadIndex;
-        tickerHigh = keysPerThread * (threadIndex + 1);
-        currentTicker = tickerLow;
+        this.tickers = tickers;
     }
 
     public static void main(String[] args) {
@@ -86,25 +87,20 @@ public class KafkaTradeProducer implements Runnable {
                 System.err.println(PROP_TRADES_PER_SECOND + " must be positive, but got " + tradesPerSecond);
                 System.exit(1);
             }
-            int keysPerThread = numDistinctKeys / numThreads;
-            double tradesPerSecondPerProducer = (double) tradesPerSecond / numThreads;
-            if (keysPerThread * numThreads * 100 / numDistinctKeys < 99) {
-                System.err.println(PROP_NUM_DISTINCT_KEYS + " not divisible by " + PROP_NUM_PARALLEL_PRODUCERS +
-                        " and the error is >1%");
-                System.exit(1);
-            }
+            String[][] tickersByThread = assignTickersToThreads(numThreads, numDistinctKeys);
             Properties kafkaProps = props(
                     "bootstrap.servers", brokerUri,
                     "key.serializer", IntegerSerializer.class.getName(),
                     "value.serializer", TradeSerializer.class.getName()
             );
+            double tradesPerSecondPerProducer = (double) tradesPerSecond / numThreads;
             ExecutorService executorService = Executors.newFixedThreadPool(numThreads);
             long nanoTimeMillisToCurrentTimeMillis = determineTimeOffset();
             long startNanoTime = System.nanoTime() + MILLISECONDS.toNanos(100);
             for (int i = 0; i < numThreads; i++) {
                 KafkaProducer<String, Trade> kafkaProducer = new KafkaProducer<>(kafkaProps);
                 KafkaTradeProducer tradeProducer = new KafkaTradeProducer(i, numThreads, kafkaProducer,
-                        tradesPerSecondPerProducer, keysPerThread,
+                        tradesPerSecondPerProducer, tickersByThread[i],
                         startNanoTime, nanoTimeMillisToCurrentTimeMillis);
                 executorService.submit(tradeProducer);
             }
@@ -200,10 +196,10 @@ public class KafkaTradeProducer implements Runnable {
 
     private Trade nextTrade(long time) {
         try {
-            return new Trade(time, currentTicker, 100, 10000);
+            return new Trade(time, tickers[currentTickerIndex], 100, 10000);
         } finally {
-            if (++currentTicker == tickerHigh) {
-                currentTicker = tickerLow;
+            if (++currentTickerIndex == tickers.length) {
+                currentTickerIndex = 0;
             }
         }
     }
@@ -214,5 +210,48 @@ public class KafkaTradeProducer implements Runnable {
 
     private static long determineTimeOffset() {
         return NANOSECONDS.toMillis(System.nanoTime()) - System.currentTimeMillis();
+    }
+
+    private static String[][] assignTickersToThreads(int numThreads, int numDistinctKeys) {
+        List<String> tickers = generateTickers(numDistinctKeys);
+        String[][] tickersByThread = new String[numThreads][];
+        double tickersPerThread = (double) numDistinctKeys / numThreads;
+        for (int i = 0; i < numThreads; i++) {
+            int lowerBound = (int) Math.round(i * tickersPerThread);
+            int upperBound = (int) Math.round((i + 1) * tickersPerThread);
+            tickersByThread[i] = new String[upperBound - lowerBound];
+            for (int j = lowerBound; j < upperBound; j++) {
+                tickersByThread[i][j - lowerBound] = tickers.get(j);
+            }
+        }
+        return tickersByThread;
+    }
+
+    private static List<String> generateTickers(int numTickers) {
+        int alphabetSize = 'Z' - 'A' + 1;
+        int countToGenerate = alphabetSize;
+        int numLetters = 1;
+        while (numTickers > countToGenerate) {
+            if (numLetters == 5) {
+                throw new IllegalArgumentException("Asked for too many tickers, max is " + countToGenerate);
+            }
+            countToGenerate *= alphabetSize;
+            numLetters++;
+        }
+        char[] tickerLetters = new char[numLetters];
+        Arrays.fill(tickerLetters, 'A');
+        List<String> all = new ArrayList<>(countToGenerate);
+        for (int i = 0; i < countToGenerate; i++) {
+            all.add(new String(tickerLetters));
+            for (int j = 0; j < numLetters; j++) {
+                tickerLetters[j]++;
+                if (tickerLetters[j] <= 'Z') {
+                    break;
+                }
+                tickerLetters[j] = 'A';
+            }
+        }
+        Collections.shuffle(all);
+        return new ArrayList<>(all.subList(0, numTickers));
     }
 }
