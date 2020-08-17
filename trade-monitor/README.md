@@ -92,7 +92,6 @@ broker-uri=localhost:9092
 # earliest or latest:
 offset-reset=latest
 kafka-source-local-parallelism=4
-allowed-event-lag-millis=0
 window-size-millis=1_000
 sliding-step-millis=10
 # at-least-once or exactly-once:
@@ -107,12 +106,9 @@ The submitted job reads the trade events that the producer program sent
 to Kafka. It performs sliding window aggregation on them (computes
 trades-per-second for each ticker) and then records the end-to-end
 latency: how much after the window's end timestamp was Jet able to emit
-the first key-value pair of the window result.
-
-Jet guarantees it won't emit a window result before having observed all
-the events up to its end time. If you set the _allowed event lag_ to
-more than zero, it will increase the end-to-end latency by that much
-because it tells Jet how much to wait for any late-coming events.
+the first key-value pair of the window result. Jet guarantees it won't
+emit a window result before having observed all the events up to its end
+time.
 
 Generally, the parallelism of the Kafka source should match the number
 of partitions in the `trades` topic. In the configuration you specify
