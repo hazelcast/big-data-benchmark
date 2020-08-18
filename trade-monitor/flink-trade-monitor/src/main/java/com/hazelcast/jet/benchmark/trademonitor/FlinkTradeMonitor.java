@@ -16,8 +16,11 @@
 
 package com.hazelcast.jet.benchmark.trademonitor;
 
+import com.hazelcast.jet.benchmark.Trade;
+import com.hazelcast.jet.benchmark.Util;
 import com.hazelcast.jet.benchmark.ValidationException;
 import org.apache.commons.lang3.mutable.MutableLong;
+import org.apache.flink.api.common.JobStatus;
 import org.apache.flink.api.common.eventtime.WatermarkStrategy;
 import org.apache.flink.api.common.functions.AggregateFunction;
 import org.apache.flink.api.common.restartstrategy.RestartStrategies;
@@ -25,6 +28,7 @@ import org.apache.flink.api.common.serialization.AbstractDeserializationSchema;
 import org.apache.flink.api.common.serialization.DeserializationSchema;
 import org.apache.flink.api.common.serialization.SimpleStringEncoder;
 import org.apache.flink.contrib.streaming.state.RocksDBStateBackend;
+import org.apache.flink.core.execution.JobClient;
 import org.apache.flink.core.fs.Path;
 import org.apache.flink.runtime.state.StateBackend;
 import org.apache.flink.runtime.state.filesystem.FsStateBackend;
@@ -40,12 +44,13 @@ import org.apache.flink.streaming.api.windowing.time.Time;
 import org.apache.flink.streaming.api.windowing.windows.TimeWindow;
 import org.apache.flink.streaming.connectors.kafka.FlinkKafkaConsumer;
 import org.apache.flink.util.Collector;
-import org.apache.kafka.common.serialization.IntegerDeserializer;
 
 import java.io.File;
 import java.io.IOException;
 import java.util.Properties;
 import java.util.UUID;
+import java.util.concurrent.ExecutionException;
+import java.util.concurrent.atomic.AtomicBoolean;
 
 import static com.hazelcast.jet.benchmark.Util.KAFKA_TOPIC;
 import static com.hazelcast.jet.benchmark.Util.ensureProp;
@@ -62,7 +67,7 @@ public class FlinkTradeMonitor {
     public static final String PROP_AGGREGATION_PARALLELISM = "aggregation-parallelism";
     public static final String PROP_WINDOW_SIZE_MILLIS = "window-size-millis";
     public static final String PROP_SLIDING_STEP_MILLIS = "sliding-step-millis";
-    public static final String PROP_CHECKPOINT_URI = "checkpoint-uri";
+    public static final String PROP_CHECKPOINT_DATA_URI = "checkpoint-data-uri";
     public static final String PROP_CHECKPOINT_INTERVAL_MILLIS = "checkpoint-interval-millis";
     public static final String PROP_ASYNCHRONOUS_SNAPSHOTS = "asynchronous-snapshots";
     public static final String PROP_STATE_BACKEND = "state-backend";
@@ -84,7 +89,7 @@ public class FlinkTradeMonitor {
             int slideBy = parseIntProp(props, PROP_SLIDING_STEP_MILLIS);
             int aggregationParallelism = parseIntProp(props, PROP_AGGREGATION_PARALLELISM);
             int checkpointInterval = parseIntProp(props, PROP_CHECKPOINT_INTERVAL_MILLIS);
-            String checkpointUri = ensureProp(props, PROP_CHECKPOINT_URI);
+            String checkpointDataUri = ensureProp(props, PROP_CHECKPOINT_DATA_URI);
             boolean asyncSnapshots = parseBooleanProp(props, PROP_ASYNCHRONOUS_SNAPSHOTS);
             String stateBackendProp = ensureProp(props, PROP_STATE_BACKEND);
             int warmupSeconds = parseIntProp(props, PROP_WARMUP_SECONDS);
@@ -92,19 +97,19 @@ public class FlinkTradeMonitor {
             String outputPath = ensureProp(props, PROP_OUTPUT_PATH);
             System.out.format(
                     "Starting Flink Trade Monitor with the following parameters:%n" +
-                    "Kafka broker URI                  %s%n" +
-                    "Message offset auto-reset         %s%n" +
-                    "Parallelism of Kafka source       %,d%n" +
-                    "Window size                       %,d ms%n" +
-                    "Window sliding step               %,d ms%n" +
-                    "Parallelism of aggregation        %,d%n" +
-                    "Checkpointing interval            %,d ms%n" +
-                    "Checkpoint URI                    %s%n" +
-                    "Asynchronous snapshots?           %b%n" +
-                    "State backend                     %s%n" +
-                    "Warmup period                     %,d seconds%n" +
-                    "Measurement period                %,d seconds%n" +
-                    "Output path                       %s%n",
+                    "Kafka broker URI            %s%n" +
+                    "Message offset auto-reset   %s%n" +
+                    "Parallelism of Kafka source %,d%n" +
+                    "Window size                 %,d ms%n" +
+                    "Window sliding step         %,d ms%n" +
+                    "Parallelism of aggregation  %,d%n" +
+                    "Checkpointing interval      %,d ms%n" +
+                    "Checkpoint URI              %s%n" +
+                    "Asynchronous snapshots?     %b%n" +
+                    "State backend               %s%n" +
+                    "Warmup period               %,d seconds%n" +
+                    "Measurement period          %,d seconds%n" +
+                    "Output path                 %s%n",
                             brokerUri,
                             offsetReset,
                             kafkaSourceParallelism,
@@ -112,7 +117,7 @@ public class FlinkTradeMonitor {
                             slideBy,
                             aggregationParallelism,
                             checkpointInterval,
-                            checkpointUri,
+                            checkpointDataUri,
                             asyncSnapshots,
                             stateBackendProp,
                             warmupSeconds,
@@ -128,9 +133,9 @@ public class FlinkTradeMonitor {
             env.setRestartStrategy(RestartStrategies.fixedDelayRestart(Integer.MAX_VALUE, 5000));
             StateBackend stateBackend;
             if (STATE_BACKEND_FS.equalsIgnoreCase(stateBackendProp)) {
-                stateBackend = new FsStateBackend(checkpointUri, asyncSnapshots);
+                stateBackend = new FsStateBackend(checkpointDataUri, asyncSnapshots);
             } else if (STATE_BACKEND_ROCKSDB.equalsIgnoreCase(stateBackendProp)) {
-                stateBackend = new RocksDBStateBackend(checkpointUri);
+                stateBackend = new RocksDBStateBackend(checkpointDataUri);
             } else {
                 System.err.println("state-backend must be either \"" + STATE_BACKEND_FS + "\" or \"" +
                         STATE_BACKEND_ROCKSDB + "\", but is \"" + stateBackendProp + "\"");
@@ -177,9 +182,9 @@ public class FlinkTradeMonitor {
             System.err.println(PROP_OFFSET_RESET + "=latest");
             System.err.println(PROP_KAFKA_SOURCE_PARALLELISM + "=4");
             System.err.println(PROP_AGGREGATION_PARALLELISM + "=12");
-            System.err.println(PROP_WINDOW_SIZE_MILLIS + "=1_000");
-            System.err.println(PROP_SLIDING_STEP_MILLIS + "=10");
-            System.err.println(PROP_CHECKPOINT_URI + "=??");
+            System.err.println(PROP_WINDOW_SIZE_MILLIS + "=10_000");
+            System.err.println(PROP_SLIDING_STEP_MILLIS + "=100");
+            System.err.println(PROP_CHECKPOINT_DATA_URI + "=file:/path/to/state-backend");
             System.err.println(PROP_CHECKPOINT_INTERVAL_MILLIS + "=10_000");
             System.err.println(PROP_ASYNCHRONOUS_SNAPSHOTS + "=true");
             System.err.println("# fs or rocksdb:");
@@ -191,15 +196,41 @@ public class FlinkTradeMonitor {
             return;
         }
         try {
-            env.execute("Trade Monitor Example");
+            JobClient job = env.executeAsync("Flink Benchmark");
+            AtomicBoolean jobCompletionFlag = new AtomicBoolean();
+            Runtime.getRuntime().addShutdownHook(new Thread(() -> {
+                job.cancel().join();
+                waitForCompletion(job, jobCompletionFlag);
+            }));
+            waitForCompletion(job, jobCompletionFlag);
         } catch (Exception e) {
             System.err.println("Job execution failed");
             e.printStackTrace();
         }
     }
 
+    private static void waitForCompletion(JobClient job, AtomicBoolean jobCompletionFlag) {
+        try {
+            while (true) {
+                JobStatus jobStatus = job.getJobStatus().get();
+                if (jobStatus.isGloballyTerminalState()) {
+                    if (!jobCompletionFlag.getAndSet(true)) {
+                        System.out.println("Job terminal state: " + jobStatus);
+                    }
+                    return;
+                }
+                Thread.sleep(1000);
+            }
+        } catch (InterruptedException e) {
+            throw new RuntimeException(e);
+        } catch (ExecutionException e) {
+            throw new RuntimeException(e.getCause());
+        }
+    }
+
     private static WindowFunction<Long, Long, String, TimeWindow> determineLatency() {
-        // Anonymous class for Flink to get type parameters through reflection
+        // Flink wants to use reflection to get type parameters from the anonymous class
+        //noinspection Convert2Lambda
         return new WindowFunction<Long, Long, String, TimeWindow>() {
             @Override
             public void apply(String key, TimeWindow win, Iterable<Long> input, Collector<Long> out) {
