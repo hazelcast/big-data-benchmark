@@ -1,12 +1,10 @@
 package com.hazelcast.jet.benchmark.trademonitor;
 
+import com.hazelcast.jet.benchmark.Trade;
 import org.apache.kafka.clients.consumer.ConsumerRecords;
 import org.apache.kafka.clients.consumer.KafkaConsumer;
 import org.apache.kafka.common.serialization.LongDeserializer;
 
-import java.util.Arrays;
-import java.util.Collections;
-import java.util.List;
 import java.util.LongSummaryStatistics;
 import java.util.Properties;
 import java.util.UUID;
@@ -23,7 +21,7 @@ public class TradeTestConsumer {
                 "bootstrap.servers", args[0],
                 "group.id", UUID.randomUUID().toString(),
                 "key.deserializer", LongDeserializer.class.getName(),
-                "value.deserializer", TradeDeserializer.class.getName(),
+                "value.deserializer", KafkaTradeDeserializer.class.getName(),
                 "auto.offset.reset", "earliest");
         KafkaConsumer<Long, Trade> consumer = new KafkaConsumer<>(props);
         consumer.subscribe(singletonList(args[1]));

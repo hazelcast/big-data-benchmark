@@ -14,7 +14,7 @@
  * limitations under the License.
  */
 
-package com.hazelcast.jet.benchmark.trademonitor;
+package com.hazelcast.jet.benchmark;
 
 public class Trade {
     public static final int TICKER_MAX_LENGTH = 5;
@@ -28,7 +28,7 @@ public class Trade {
     public Trade() {
     }
 
-    Trade(long time, String ticker, int quantity, int price) {
+    public Trade(long time, String ticker, int quantity, int price) {
         this.time = time;
         this.ticker = ticker;
         this.quantity = quantity;

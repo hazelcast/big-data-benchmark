@@ -212,8 +212,6 @@ public class FlinkTradeMonitor {
         return props(
                 "bootstrap.servers", brokerUrl,
                 "group.id", UUID.randomUUID().toString(),
-                "key.deserializer", IntegerDeserializer.class.getName(),
-                "value.deserializer", TradeDeserializer.class.getName(),
                 "auto.offset.reset", offsetReset,
                 "max.poll.records", "32768"
         );
@@ -221,11 +219,9 @@ public class FlinkTradeMonitor {
 
     private static DeserializationSchema<Trade> tradeDeserializationSchema() {
         return new AbstractDeserializationSchema<Trade>() {
-            private final TradeDeserializer deserializer = new TradeDeserializer();
-
             @Override
             public Trade deserialize(byte[] message) {
-                return deserializer.deserialize(null, message);
+                return Util.deserializeTrade(message);
             }
         };
     }

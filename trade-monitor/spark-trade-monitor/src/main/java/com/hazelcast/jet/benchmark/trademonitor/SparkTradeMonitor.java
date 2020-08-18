@@ -16,6 +16,7 @@
 
 package com.hazelcast.jet.benchmark.trademonitor;
 
+import com.hazelcast.jet.benchmark.Trade;
 import org.apache.kafka.clients.consumer.ConsumerRecord;
 import org.apache.kafka.common.serialization.LongDeserializer;
 import org.apache.spark.SparkConf;
@@ -27,7 +28,6 @@ import org.apache.spark.streaming.kafka010.ConsumerStrategies;
 import org.apache.spark.streaming.kafka010.KafkaUtils;
 import org.apache.spark.streaming.kafka010.LocationStrategies;
 import scala.Tuple2;
-import scala.Tuple3;
 
 import java.util.Collections;
 import java.util.HashMap;
@@ -86,7 +86,7 @@ public class SparkTradeMonitor {
         props.put("bootstrap.servers", brokerUrl);
         props.put("group.id", UUID.randomUUID().toString());
         props.put("key.deserializer", LongDeserializer.class);
-        props.put("value.deserializer", TradeDeserializer.class);
+        props.put("value.deserializer", KafkaTradeDeserializer.class);
         props.put("auto.offset.reset", "latest");
         return props;
     }

@@ -4,10 +4,14 @@ import java.io.File;
 import java.io.FileInputStream;
 import java.io.FileNotFoundException;
 import java.io.IOException;
+import java.nio.ByteBuffer;
 import java.util.Properties;
+
+import static com.hazelcast.jet.benchmark.Trade.TICKER_MAX_LENGTH;
 
 public final class Util {
     public static final String KAFKA_TOPIC = "trades";
+    private static final byte PADDING_BYTE = (byte) ' ';
 
     private Util() {
     }
@@ -73,4 +77,35 @@ public final class Util {
         }
     }
 
+    public static byte[] serializeTrade(Trade trade) {
+        ByteBuffer buf = ByteBuffer.allocate(TICKER_MAX_LENGTH + Long.BYTES + Integer.BYTES + Integer.BYTES);
+        String ticker = trade.getTicker();
+        if (ticker.length() > TICKER_MAX_LENGTH) {
+            throw new RuntimeException("This ticker is too long: " + ticker + ". Max length is " + TICKER_MAX_LENGTH);
+        }
+        int i = 0;
+        for (; i < ticker.length(); i++) {
+            buf.put((byte) ticker.charAt(i));
+        }
+        for (; i < TICKER_MAX_LENGTH; i++) {
+            buf.put(PADDING_BYTE);
+        }
+        buf.putLong(trade.getTime());
+        buf.putInt(trade.getPrice());
+        buf.putInt(trade.getQuantity());
+        return buf.array();
+    }
+
+    public static Trade deserializeTrade(byte[] bytes) {
+        ByteBuffer buf = ByteBuffer.wrap(bytes);
+        int tickerLen = 0;
+        while (bytes[tickerLen] != PADDING_BYTE && tickerLen < TICKER_MAX_LENGTH) {
+            tickerLen++;
+        }
+        String ticker = new String(bytes, 0, tickerLen);
+        long time = buf.getLong();
+        int price = buf.getInt();
+        int quantity = buf.getInt();
+        return new Trade(time, ticker, quantity, price);
+    }
 }

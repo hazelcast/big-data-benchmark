@@ -1,5 +1,6 @@
 package com.hazelcast.jet.benchmark.trademonitor;
 
+import com.hazelcast.jet.benchmark.Trade;
 import com.hazelcast.jet.benchmark.Util;
 import com.hazelcast.jet.benchmark.ValidationException;
 import org.apache.kafka.clients.producer.KafkaProducer;
@@ -91,7 +92,7 @@ public class KafkaTradeProducer implements Runnable {
             Properties kafkaProps = props(
                     "bootstrap.servers", brokerUri,
                     "key.serializer", IntegerSerializer.class.getName(),
-                    "value.serializer", TradeSerializer.class.getName()
+                    "value.serializer", KafkaTradeSerializer.class.getName()
             );
             double tradesPerSecondPerProducer = (double) tradesPerSecond / numThreads;
             ExecutorService executorService = Executors.newFixedThreadPool(numThreads);

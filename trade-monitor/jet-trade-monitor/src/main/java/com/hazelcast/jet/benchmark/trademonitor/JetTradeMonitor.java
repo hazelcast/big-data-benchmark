@@ -4,6 +4,7 @@ import com.hazelcast.function.FunctionEx;
 import com.hazelcast.jet.Jet;
 import com.hazelcast.jet.JetInstance;
 import com.hazelcast.jet.Job;
+import com.hazelcast.jet.benchmark.Trade;
 import com.hazelcast.jet.benchmark.ValidationException;
 import com.hazelcast.jet.config.JobConfig;
 import com.hazelcast.jet.config.ProcessingGuarantee;
@@ -162,7 +163,7 @@ public class JetTradeMonitor {
                 "bootstrap.servers", brokerUrl,
                 "group.id", UUID.randomUUID().toString(),
                 "key.deserializer", IntegerDeserializer.class.getName(),
-                "value.deserializer", TradeDeserializer.class.getName(),
+                "value.deserializer", KafkaTradeDeserializer.class.getName(),
                 "auto.offset.reset", offsetReset,
                 "max.poll.records", "32768"
         );
