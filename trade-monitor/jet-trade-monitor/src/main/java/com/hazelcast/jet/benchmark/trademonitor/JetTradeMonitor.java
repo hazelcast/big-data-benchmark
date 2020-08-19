@@ -52,6 +52,7 @@ public class JetTradeMonitor {
     public static final String PROP_WARMUP_SECONDS = "warmup-seconds";
     public static final String PROP_MEASUREMENT_SECONDS = "measurement-seconds";
     public static final String PROP_OUTPUT_PATH = "output-path";
+
     public static final long LATENCY_REPORTING_THRESHOLD_MS = 10;
     public static final long WARMUP_REPORTING_INTERVAL_MS = SECONDS.toMillis(2);
     public static final long MEASUREMENT_REPORTING_INTERVAL_MS = SECONDS.toMillis(10);

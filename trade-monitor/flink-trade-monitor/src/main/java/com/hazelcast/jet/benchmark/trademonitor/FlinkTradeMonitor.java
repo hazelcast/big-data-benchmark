@@ -19,34 +19,39 @@ package com.hazelcast.jet.benchmark.trademonitor;
 import com.hazelcast.jet.benchmark.Trade;
 import com.hazelcast.jet.benchmark.Util;
 import com.hazelcast.jet.benchmark.ValidationException;
+import org.HdrHistogram.Histogram;
 import org.apache.commons.lang3.mutable.MutableLong;
 import org.apache.flink.api.common.JobStatus;
 import org.apache.flink.api.common.eventtime.WatermarkStrategy;
 import org.apache.flink.api.common.functions.AggregateFunction;
+import org.apache.flink.api.common.functions.FlatMapFunction;
 import org.apache.flink.api.common.restartstrategy.RestartStrategies;
 import org.apache.flink.api.common.serialization.AbstractDeserializationSchema;
 import org.apache.flink.api.common.serialization.DeserializationSchema;
 import org.apache.flink.api.common.serialization.SimpleStringEncoder;
+import org.apache.flink.api.java.tuple.Tuple2;
+import org.apache.flink.api.java.tuple.Tuple3;
 import org.apache.flink.contrib.streaming.state.RocksDBStateBackend;
 import org.apache.flink.core.execution.JobClient;
 import org.apache.flink.core.fs.Path;
 import org.apache.flink.runtime.state.StateBackend;
 import org.apache.flink.runtime.state.filesystem.FsStateBackend;
 import org.apache.flink.streaming.api.TimeCharacteristic;
-import org.apache.flink.streaming.api.datastream.DataStreamSource;
+import org.apache.flink.streaming.api.datastream.SingleOutputStreamOperator;
 import org.apache.flink.streaming.api.environment.StreamExecutionEnvironment;
 import org.apache.flink.streaming.api.functions.sink.filesystem.StreamingFileSink;
 import org.apache.flink.streaming.api.functions.windowing.WindowFunction;
 import org.apache.flink.streaming.api.windowing.assigners.SlidingEventTimeWindows;
 import org.apache.flink.streaming.api.windowing.assigners.TumblingEventTimeWindows;
-import org.apache.flink.streaming.api.windowing.assigners.WindowAssigner;
 import org.apache.flink.streaming.api.windowing.time.Time;
 import org.apache.flink.streaming.api.windowing.windows.TimeWindow;
 import org.apache.flink.streaming.connectors.kafka.FlinkKafkaConsumer;
 import org.apache.flink.util.Collector;
 
+import java.io.ByteArrayOutputStream;
 import java.io.File;
 import java.io.IOException;
+import java.io.PrintStream;
 import java.util.Properties;
 import java.util.UUID;
 import java.util.concurrent.ExecutionException;
@@ -58,6 +63,8 @@ import static com.hazelcast.jet.benchmark.Util.loadProps;
 import static com.hazelcast.jet.benchmark.Util.parseBooleanProp;
 import static com.hazelcast.jet.benchmark.Util.parseIntProp;
 import static com.hazelcast.jet.benchmark.Util.props;
+import static java.lang.Thread.currentThread;
+import static java.util.concurrent.TimeUnit.SECONDS;
 
 public class FlinkTradeMonitor {
     public static final String DEFAULT_PROPERTIES_FILENAME = "flink-trade-monitor.properties";
@@ -76,6 +83,12 @@ public class FlinkTradeMonitor {
     public static final String PROP_WARMUP_SECONDS = "warmup-seconds";
     public static final String PROP_MEASUREMENT_SECONDS = "measurement-seconds";
     public static final String PROP_OUTPUT_PATH = "output-path";
+
+    public static final long LATENCY_REPORTING_THRESHOLD_MS = 10;
+    public static final long WARMUP_REPORTING_INTERVAL_MS = SECONDS.toMillis(2);
+    public static final long MEASUREMENT_REPORTING_INTERVAL_MS = SECONDS.toMillis(10);
+    public static final long BENCHMARKING_DONE_REPORT_INTERVAL_MS = SECONDS.toMillis(1);
+    public static final String BENCHMARK_DONE_MESSAGE = "benchmarking is done";
 
     public static void main(String[] args) {
         String propsPath = args.length > 0 ? args[0] : DEFAULT_PROPERTIES_FILENAME;
@@ -144,25 +157,29 @@ public class FlinkTradeMonitor {
             }
             env.setStateBackend(stateBackend);
 
-            DataStreamSource<Trade> trades = env
-                    .addSource(new FlinkKafkaConsumer<>(
-                            KAFKA_TOPIC, tradeDeserializationSchema(), createKafkaProperties(brokerUri, offsetReset)))
-                    .setParallelism(kafkaSourceParallelism);
+            SingleOutputStreamOperator<Tuple2<Long, Long>> latencies = env
+                    .addSource(new FlinkKafkaConsumer<>(KAFKA_TOPIC, tradeDeserializationSchema(),
+                            createKafkaProperties(brokerUri, offsetReset)))
+                    .setParallelism(kafkaSourceParallelism)
+                    .assignTimestampsAndWatermarks(WatermarkStrategy
+                            .<Trade>forMonotonousTimestamps()
+                            .withTimestampAssigner((trade, timestamp) -> trade.getTime()))
+                    .keyBy(Trade::getTicker)
+                    .window(windowSize == slideBy ?
+                            TumblingEventTimeWindows.of(Time.milliseconds(windowSize)) :
+                            SlidingEventTimeWindows.of(Time.milliseconds(windowSize), Time.milliseconds(slideBy)))
+                    .aggregate(counting(), emitTimestampKeyAndCount())
+                    .setParallelism(aggregationParallelism)
+                    .flatMap(determineLatency())
+                    .setParallelism(1);
+            latencies
+                    .map(t2 -> String.format("%d,%d", t2.f0, t2.f1))
+                    .addSink(fileSink(outputPath, "latency-log"));
+            latencies
+                    .flatMap(recordLatencyHistogram(warmupSeconds, measurementSeconds))
+                    .setParallelism(1)
+                    .addSink(fileSink(outputPath, "latency-profile"));
 
-            WindowAssigner<Object, TimeWindow> window = windowSize == slideBy ?
-                    TumblingEventTimeWindows.of(Time.milliseconds(windowSize)) :
-                    SlidingEventTimeWindows.of(Time.milliseconds(windowSize), Time.milliseconds(slideBy));
-
-            trades.assignTimestampsAndWatermarks(WatermarkStrategy
-                    .<Trade>forMonotonousTimestamps()
-                    .withTimestampAssigner((trade, timestamp) -> trade.getTime()))
-                  .keyBy(Trade::getTicker)
-                  .window(window)
-                  .aggregate(counting(), determineLatency())
-                  .setParallelism(aggregationParallelism)
-                  .addSink(StreamingFileSink
-                          .forRowFormat(Path.fromLocalFile(new File(outputPath)), new SimpleStringEncoder<Long>())
-                          .build());
         } catch (ValidationException | IOException e) {
             System.err.println(e.getMessage());
             System.err.println();
@@ -170,6 +187,7 @@ public class FlinkTradeMonitor {
             System.err.println("window aggregation on them and records the pipeline's latency:");
             System.err.println("how much after the window's end timestamp was Flink able to emit the first");
             System.err.println("key-value pair of the window result.");
+            System.err.println();
             System.err.println("Usage:");
             System.err.println("    " + FlinkTradeMonitor.class.getSimpleName() + " [props-file]");
             System.err.println();
@@ -198,8 +216,10 @@ public class FlinkTradeMonitor {
         try {
             JobClient job = env.executeAsync("Trade Monitor Benchmark");
             AtomicBoolean jobCompletionFlag = new AtomicBoolean();
+            Thread mainThread = currentThread();
             Runtime.getRuntime().addShutdownHook(new Thread(() -> {
                 job.cancel().join();
+                mainThread.interrupt();
                 waitForCompletion(job, jobCompletionFlag);
             }));
             waitForCompletion(job, jobCompletionFlag);
@@ -207,54 +227,6 @@ public class FlinkTradeMonitor {
             System.err.println("Job execution failed");
             e.printStackTrace();
         }
-    }
-
-    private static void waitForCompletion(JobClient job, AtomicBoolean jobCompletionFlag) {
-        try {
-            while (true) {
-                JobStatus jobStatus = job.getJobStatus().get();
-                if (jobStatus.isGloballyTerminalState()) {
-                    if (!jobCompletionFlag.getAndSet(true)) {
-                        System.out.println("Job terminal state: " + jobStatus);
-                    }
-                    return;
-                }
-                Thread.sleep(1000);
-            }
-        } catch (InterruptedException e) {
-            throw new RuntimeException(e);
-        } catch (ExecutionException e) {
-            throw new RuntimeException(e.getCause());
-        }
-    }
-
-    private static WindowFunction<Long, Long, String, TimeWindow> determineLatency() {
-        // Flink wants to use reflection to get type parameters from the anonymous class
-        //noinspection Convert2Lambda
-        return new WindowFunction<Long, Long, String, TimeWindow>() {
-            @Override
-            public void apply(String key, TimeWindow win, Iterable<Long> input, Collector<Long> out) {
-                out.collect(System.currentTimeMillis() - win.getEnd());
-            }
-        };
-    }
-
-    private static Properties createKafkaProperties(String brokerUrl, String offsetReset) {
-        return props(
-                "bootstrap.servers", brokerUrl,
-                "group.id", UUID.randomUUID().toString(),
-                "auto.offset.reset", offsetReset,
-                "max.poll.records", "32768"
-        );
-    }
-
-    private static DeserializationSchema<Trade> tradeDeserializationSchema() {
-        return new AbstractDeserializationSchema<Trade>() {
-            @Override
-            public Trade deserialize(byte[] message) {
-                return Util.deserializeTrade(message);
-            }
-        };
     }
 
     private static AggregateFunction<Trade, MutableLong, Long> counting() {
@@ -279,6 +251,138 @@ public class FlinkTradeMonitor {
             @Override
             public Long getResult (MutableLong accumulator){
                 return accumulator.longValue();
+            }
+        };
+    }
+
+    private static WindowFunction<Long, Tuple3<Long, String, Long>, String, TimeWindow> emitTimestampKeyAndCount() {
+        return new WindowFunction<Long, Tuple3<Long, String, Long>, String, TimeWindow>() {
+            @Override
+            public void apply(
+                    String key, TimeWindow win, Iterable<Long> input, Collector<Tuple3<Long, String, Long>> out
+            ) {
+                out.collect(new Tuple3<>(win.getEnd(), key, input.iterator().next()));
+            }
+        };
+    }
+
+    private static FlatMapFunction<Tuple3<Long, String, Long>, Tuple2<Long, Long>> determineLatency() {
+        return new FlatMapFunction<Tuple3<Long, String, Long>, Tuple2<Long, Long>>() {
+            private long startTimestamp;
+            private long lastTimestamp;
+
+            @Override
+            public void flatMap(Tuple3<Long, String, Long> tsKeyCount, Collector<Tuple2<Long, Long>> collector) {
+                long timestamp = tsKeyCount.f0;
+                if (timestamp <= lastTimestamp) {
+                    return;
+                }
+                if (lastTimestamp == 0) {
+                    startTimestamp = timestamp;
+                }
+                lastTimestamp = timestamp;
+
+                long latency = System.currentTimeMillis() - timestamp;
+                if (latency == -1) { // very low latencies may be reported as negative due to clock skew
+                    latency = 0;
+                }
+                if (latency < 0) {
+                    throw new RuntimeException("Negative latency: " + latency);
+                }
+                if (latency >= LATENCY_REPORTING_THRESHOLD_MS) {
+                    System.out.format("Latency %,d ms (first seen key: %s, count %,d)%n",
+                            latency, tsKeyCount.f1, tsKeyCount.f2);
+                }
+                collector.collect(new Tuple2<>(timestamp - startTimestamp, latency));
+            }
+        };
+    }
+
+    private static FlatMapFunction<Tuple2<Long, Long>, String> recordLatencyHistogram(
+            long warmupTimeMillis, long totalTimeMillis
+    ) {
+        return new FlatMapFunction<Tuple2<Long, Long>, String>() {
+            private Histogram histogram = new Histogram(5);
+
+            @Override
+            public void flatMap(Tuple2<Long, Long> timestampAndLatency, Collector<String> collector) {
+                long timestamp = timestampAndLatency.f0;
+                String timeMsg = String.format("%,d ", totalTimeMillis - timestamp);
+                if (histogram == null) {
+                    if (timestamp % BENCHMARKING_DONE_REPORT_INTERVAL_MS == 0) {
+                        System.out.format(BENCHMARK_DONE_MESSAGE + " -- %s%n", timeMsg);
+                    }
+                    return;
+                }
+                if (timestamp < warmupTimeMillis) {
+                    if (timestamp % WARMUP_REPORTING_INTERVAL_MS == 0) {
+                        System.out.format("warming up -- %s%n", timeMsg);
+                    }
+                } else {
+                    if (timestamp % MEASUREMENT_REPORTING_INTERVAL_MS == 0) {
+                        System.out.println(timeMsg);
+                    }
+                    histogram.recordValue(timestampAndLatency.f1);
+                }
+                if (timestamp >= totalTimeMillis) {
+                    try {
+                        collector.collect(exportHistogram(histogram));
+                    } finally {
+                        histogram = null;
+                    }
+                }
+            }
+        };
+    }
+
+    private static String exportHistogram(Histogram histogram) {
+        ByteArrayOutputStream bos = new ByteArrayOutputStream();
+        PrintStream out = new PrintStream(bos);
+        histogram.outputPercentileDistribution(out, 1.0);
+        out.close();
+        return bos.toString();
+    }
+
+    private static StreamingFileSink<String> fileSink(String parent, String child) {
+        return StreamingFileSink
+                .forRowFormat(Path.fromLocalFile(new File(parent, child)),
+                        new SimpleStringEncoder<String>())
+                .build();
+    }
+
+    private static void waitForCompletion(JobClient job, AtomicBoolean jobCompletionFlag) {
+        try {
+            while (true) {
+                JobStatus jobStatus = job.getJobStatus().get();
+                if (jobStatus.isGloballyTerminalState()) {
+                    if (!jobCompletionFlag.getAndSet(true)) {
+                        System.out.println("Job terminal state: " + jobStatus);
+                    }
+                    return;
+                }
+                Thread.sleep(200);
+            }
+        } catch (InterruptedException e) {
+            currentThread().interrupt();
+        } catch (ExecutionException e) {
+            throw new RuntimeException(e.getCause());
+        }
+    }
+
+    private static Properties createKafkaProperties(String brokerUrl, String offsetReset) {
+        return props(
+                "bootstrap.servers", brokerUrl,
+                "group.id", UUID.randomUUID().toString(),
+                "auto.offset.reset", offsetReset,
+                "max.poll.records", "32768"
+        );
+    }
+
+    private static DeserializationSchema<Trade> tradeDeserializationSchema() {
+        return new AbstractDeserializationSchema<Trade>() {
+            @Override
+            public Trade deserialize(byte[] message) {
+                return Util.deserializeTrade(message);
             }
         };
     }
