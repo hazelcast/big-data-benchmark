@@ -1,6 +1,7 @@
 package com.hazelcast.jet.benchmark.trademonitor;
 
 import com.hazelcast.jet.benchmark.Trade;
+import com.hazelcast.jet.benchmark.Util;
 import org.apache.kafka.clients.consumer.ConsumerRecords;
 import org.apache.kafka.clients.consumer.KafkaConsumer;
 import org.apache.kafka.common.serialization.LongDeserializer;
@@ -24,8 +25,8 @@ public class TradeTestConsumer {
                 "value.deserializer", KafkaTradeDeserializer.class.getName(),
                 "auto.offset.reset", "earliest");
         KafkaConsumer<Long, Trade> consumer = new KafkaConsumer<>(props);
-        consumer.subscribe(singletonList(args[1]));
-        System.out.println("Subscribed to topic " + args[1]);
+        consumer.subscribe(singletonList(Util.KAFKA_TOPIC));
+        System.out.println("Subscribed to topic " + Util.KAFKA_TOPIC);
         long count = 0;
         long start = System.nanoTime();
         while (true) {
