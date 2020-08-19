@@ -69,13 +69,20 @@ can track this in the program's output.
 1. Download and unzip the Hazelcast Jet distribution package, see the
 [Jet documentation](https://jet-start.sh/docs/operations/installation).
 
-2. Start a Jet node:
+2. Activate the Kafka connector plugin:
 
 ```bash
-$ /path/to/hazelcast-jet/bin/jet-start
+$ cd /path/to/hazelcast-jet
+$ mv opt/hazelcast-jet-kafka-*.jar opt/
 ```
 
-3. Submit the job
+3. Start a Jet node:
+
+```bash
+$ bin/jet-start
+```
+
+4. Submit the job
 
 ```bash
 $ cd /path/to/big-data-benchmark/trade-monitor/jet-trade-monitor
@@ -121,7 +128,7 @@ threads will remain idle.
 Watch the console output at the server. When you see "benchmarking is
 done" being repeatedly printed, you can stop the job with Ctrl-C.
 
-4. Retrieve the Results
+5. Retrieve the Results
 
 The results will be on the Jet server, in the directory you specified
 when submitting the job. In our example it is the `benchmark-results`
@@ -143,7 +150,7 @@ $ cd /path/to/hazelcast-jet/benchmark-results/latency-log
 $ gnuplot -e "set datafile separator ','; plot '0'; pause -1"
 ```
 
-5. Clean up Kafka
+6. Clean up Kafka
 
 Since the benchmark produces a lot of data to Kafka, which holds on to
 it for a week by default, it is a good idea to clean up Kafka storage
