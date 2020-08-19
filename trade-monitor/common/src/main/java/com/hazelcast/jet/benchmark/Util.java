@@ -98,12 +98,12 @@ public final class Util {
     }
 
     public static Trade deserializeTrade(byte[] bytes) {
-        ByteBuffer buf = ByteBuffer.wrap(bytes);
         int tickerLen = 0;
         while (bytes[tickerLen] != PADDING_BYTE && tickerLen < TICKER_MAX_LENGTH) {
             tickerLen++;
         }
         String ticker = new String(bytes, 0, tickerLen);
+        ByteBuffer buf = ByteBuffer.wrap(bytes, TICKER_MAX_LENGTH, TRADE_BLOB_SIZE - TICKER_MAX_LENGTH);
         long time = buf.getLong();
         int price = buf.getInt();
         int quantity = buf.getInt();
