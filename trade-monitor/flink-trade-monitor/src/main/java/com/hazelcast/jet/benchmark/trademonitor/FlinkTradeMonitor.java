@@ -196,7 +196,7 @@ public class FlinkTradeMonitor {
             return;
         }
         try {
-            JobClient job = env.executeAsync("Flink Benchmark");
+            JobClient job = env.executeAsync("Trade Monitor Benchmark");
             AtomicBoolean jobCompletionFlag = new AtomicBoolean();
             Runtime.getRuntime().addShutdownHook(new Thread(() -> {
                 job.cancel().join();

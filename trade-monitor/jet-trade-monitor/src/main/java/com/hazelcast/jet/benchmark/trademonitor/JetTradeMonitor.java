@@ -5,6 +5,7 @@ import com.hazelcast.jet.Jet;
 import com.hazelcast.jet.JetInstance;
 import com.hazelcast.jet.Job;
 import com.hazelcast.jet.benchmark.Trade;
+import com.hazelcast.jet.benchmark.Util;
 import com.hazelcast.jet.benchmark.ValidationException;
 import com.hazelcast.jet.config.JobConfig;
 import com.hazelcast.jet.config.ProcessingGuarantee;
@@ -14,12 +15,16 @@ import com.hazelcast.jet.kafka.KafkaSources;
 import com.hazelcast.jet.pipeline.Pipeline;
 import com.hazelcast.jet.pipeline.Sinks;
 import com.hazelcast.jet.pipeline.StreamStage;
+import com.hazelcast.nio.ObjectDataInput;
+import com.hazelcast.nio.ObjectDataOutput;
+import com.hazelcast.nio.serialization.StreamSerializer;
 import org.HdrHistogram.Histogram;
 import org.apache.kafka.clients.consumer.ConsumerRecord;
 import org.apache.kafka.common.serialization.IntegerDeserializer;
 
 import java.io.ByteArrayOutputStream;
 import java.io.File;
+import java.io.IOException;
 import java.io.PrintStream;
 import java.io.Serializable;
 import java.util.Properties;
@@ -100,6 +105,7 @@ public class JetTradeMonitor {
                             KAFKA_TOPIC))
                     .withNativeTimestamps(0)
                     .setLocalParallelism(kafkaSourceParallelism)
+                    .rebalance()
                     .groupingKey(Trade::getTicker)
                     .window(sliding(windowSize, slideBy))
                     .aggregate(counting())
@@ -116,13 +122,14 @@ public class JetTradeMonitor {
                             RecordLatencyHistogram::map)
                     .writeTo(Sinks.files(new File(outputPath, "latency-profile").getPath()));
 
-            JobConfig config = new JobConfig();
-            config.setName("JetTradeMonitor");
-            config.setSnapshotIntervalMillis(snapshotInterval);
-            config.setProcessingGuarantee(guarantee);
+            JobConfig jobCfg = new JobConfig();
+            jobCfg.setName("Trade Monitor Benchmark");
+            jobCfg.setSnapshotIntervalMillis(snapshotInterval);
+            jobCfg.setProcessingGuarantee(guarantee);
+            jobCfg.registerSerializer(Trade.class, TradeStreamSerializer.class);
 
             JetInstance jet = Jet.bootstrappedInstance();
-            Job job = jet.newJob(pipeline, config);
+            Job job = jet.newJob(pipeline, jobCfg);
             Runtime.getRuntime().addShutdownHook(new Thread(job::cancel));
             System.out.println("Benchmarking job is now in progress, let it run until you see the message");
             System.out.println("\"" + BENCHMARK_DONE_MESSAGE + "\" in the Jet server log,");
@@ -243,6 +250,26 @@ public class JetTradeMonitor {
             histogram.outputPercentileDistribution(out, 1.0);
             out.close();
             return bos.toString();
+        }
+    }
+
+    private static class TradeStreamSerializer implements StreamSerializer<Trade> {
+
+        @Override
+        public void write(ObjectDataOutput out, Trade trade) throws IOException {
+            out.write(Util.serializeTrade(trade));
+        }
+
+        @Override
+        public Trade read(ObjectDataInput in) throws IOException {
+            byte[] blob = new byte[Util.TRADE_BLOB_SIZE];
+            in.readFully(blob);
+            return Util.deserializeTrade(blob);
+        }
+
+        @Override
+        public int getTypeId() {
+            return 1;
         }
     }
 }

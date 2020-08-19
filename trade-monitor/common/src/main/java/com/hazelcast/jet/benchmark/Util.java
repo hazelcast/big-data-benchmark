@@ -11,6 +11,7 @@ import static com.hazelcast.jet.benchmark.Trade.TICKER_MAX_LENGTH;
 
 public final class Util {
     public static final String KAFKA_TOPIC = "trades";
+    public static final int TRADE_BLOB_SIZE = TICKER_MAX_LENGTH + Long.BYTES + Integer.BYTES + Integer.BYTES;
     private static final byte PADDING_BYTE = (byte) ' ';
 
     private Util() {
@@ -78,7 +79,7 @@ public final class Util {
     }
 
     public static byte[] serializeTrade(Trade trade) {
-        ByteBuffer buf = ByteBuffer.allocate(TICKER_MAX_LENGTH + Long.BYTES + Integer.BYTES + Integer.BYTES);
+        ByteBuffer buf = ByteBuffer.allocate(TRADE_BLOB_SIZE);
         String ticker = trade.getTicker();
         if (ticker.length() > TICKER_MAX_LENGTH) {
             throw new RuntimeException("This ticker is too long: " + ticker + ". Max length is " + TICKER_MAX_LENGTH);
