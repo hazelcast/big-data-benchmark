@@ -149,7 +149,7 @@ public class KafkaTradeProducer implements Runnable {
         try {
             while (true) {
                 nowNanos = System.nanoTime();
-                long expectedProduced = (long) ((nowNanos - startNanoTime) * tradesPerNanosecond);
+                long expectedProduced = (long) ((nowNanos - startNanoTime) * tradesPerNanosecond) + 1;
                 if (producedCount < expectedProduced) {
                     produceUntil(expectedProduced);
                     reportThroughput();
