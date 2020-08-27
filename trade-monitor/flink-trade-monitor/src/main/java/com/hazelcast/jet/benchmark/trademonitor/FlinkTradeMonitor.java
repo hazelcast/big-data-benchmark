@@ -51,6 +51,7 @@ import org.apache.flink.util.Collector;
 import java.io.ByteArrayOutputStream;
 import java.io.File;
 import java.io.IOException;
+import java.io.ObjectStreamException;
 import java.io.PrintStream;
 import java.util.Properties;
 import java.util.UUID;
@@ -84,7 +85,7 @@ public class FlinkTradeMonitor {
     public static final String PROP_MEASUREMENT_SECONDS = "measurement-seconds";
     public static final String PROP_OUTPUT_PATH = "output-path";
 
-    public static final long LATENCY_REPORTING_THRESHOLD_MS = 10;
+    public static final long LATENCY_REPORTING_THRESHOLD_MS = 300;
     public static final long WARMUP_REPORTING_INTERVAL_MS = SECONDS.toMillis(2);
     public static final long MEASUREMENT_REPORTING_INTERVAL_MS = SECONDS.toMillis(10);
     public static final long BENCHMARKING_DONE_REPORT_INTERVAL_MS = SECONDS.toMillis(1);
@@ -138,6 +139,7 @@ public class FlinkTradeMonitor {
                             outputPath
             );
             env = StreamExecutionEnvironment.getExecutionEnvironment();
+            env.setParallelism(1);
             env.setStreamTimeCharacteristic(TimeCharacteristic.EventTime);
             if (checkpointInterval > 0) {
                 env.enableCheckpointing(checkpointInterval);
@@ -170,16 +172,16 @@ public class FlinkTradeMonitor {
                             SlidingEventTimeWindows.of(Time.milliseconds(windowSize), Time.milliseconds(slideBy)))
                     .aggregate(counting(), emitTimestampKeyAndCount())
                     .setParallelism(aggregationParallelism)
-                    .flatMap(determineLatency())
-                    .setParallelism(1);
+                    .flatMap(determineLatency());
+            long warmupTimeMillis = SECONDS.toMillis(warmupSeconds);
+            long totalTimeMillis = SECONDS.toMillis(warmupSeconds + measurementSeconds);
             latencies
+                    .filter(t2 -> t2.f0 < totalTimeMillis)
                     .map(t2 -> String.format("%d,%d", t2.f0, t2.f1))
                     .addSink(fileSink(outputPath, "latency-log"));
             latencies
-                    .flatMap(recordLatencyHistogram(warmupSeconds, measurementSeconds))
-                    .setParallelism(1)
+                    .flatMap(new RecordLatencyHistogram(totalTimeMillis, warmupTimeMillis))
                     .addSink(fileSink(outputPath, "latency-profile"));
-
         } catch (ValidationException | IOException e) {
             System.err.println(e.getMessage());
             System.err.println();
@@ -268,8 +270,8 @@ public class FlinkTradeMonitor {
 
     private static FlatMapFunction<Tuple3<Long, String, Long>, Tuple2<Long, Long>> determineLatency() {
         return new FlatMapFunction<Tuple3<Long, String, Long>, Tuple2<Long, Long>>() {
-            private long startTimestamp;
-            private long lastTimestamp;
+            private transient long startTimestamp;
+            private transient long lastTimestamp;
 
             @Override
             public void flatMap(Tuple3<Long, String, Long> tsKeyCount, Collector<Tuple2<Long, Long>> collector) {
@@ -298,49 +300,63 @@ public class FlinkTradeMonitor {
         };
     }
 
-    private static FlatMapFunction<Tuple2<Long, Long>, String> recordLatencyHistogram(
-            long warmupTimeMillis, long totalTimeMillis
-    ) {
-        return new FlatMapFunction<Tuple2<Long, Long>, String>() {
-            private Histogram histogram = new Histogram(5);
+    private static class RecordLatencyHistogram implements FlatMapFunction<Tuple2<Long, Long>, String> {
 
-            @Override
-            public void flatMap(Tuple2<Long, Long> timestampAndLatency, Collector<String> collector) {
-                long timestamp = timestampAndLatency.f0;
-                String timeMsg = String.format("%,d ", totalTimeMillis - timestamp);
-                if (histogram == null) {
-                    if (timestamp % BENCHMARKING_DONE_REPORT_INTERVAL_MS == 0) {
-                        System.out.format(BENCHMARK_DONE_MESSAGE + " -- %s%n", timeMsg);
-                    }
-                    return;
+        private final long totalTimeMillis;
+        private final long warmupTimeMillis;
+        private transient Histogram histogram = new Histogram(5);
+
+        public RecordLatencyHistogram(long totalTimeMillis, long warmupTimeMillis) {
+            this.totalTimeMillis = totalTimeMillis;
+            this.warmupTimeMillis = warmupTimeMillis;
+            initializeHistogram();
+        }
+
+        private void initializeHistogram() {
+            histogram = new Histogram(5);
+        }
+
+        @Override
+        public void flatMap(Tuple2<Long, Long> timestampAndLatency, Collector<String> collector) {
+            long timestamp = timestampAndLatency.f0;
+            String timeMsg = String.format("%,d ", totalTimeMillis - timestamp);
+            if (histogram == null) {
+                if (timestamp % BENCHMARKING_DONE_REPORT_INTERVAL_MS == 0) {
+                    System.out.format(BENCHMARK_DONE_MESSAGE + " -- %s%n", timeMsg);
                 }
-                if (timestamp < warmupTimeMillis) {
-                    if (timestamp % WARMUP_REPORTING_INTERVAL_MS == 0) {
-                        System.out.format("warming up -- %s%n", timeMsg);
-                    }
-                } else {
-                    if (timestamp % MEASUREMENT_REPORTING_INTERVAL_MS == 0) {
-                        System.out.println(timeMsg);
-                    }
-                    histogram.recordValue(timestampAndLatency.f1);
+                return;
+            }
+            if (timestamp < warmupTimeMillis) {
+                if (timestamp % WARMUP_REPORTING_INTERVAL_MS == 0) {
+                    System.out.format("warming up -- %s%n", timeMsg);
                 }
-                if (timestamp >= totalTimeMillis) {
-                    try {
-                        collector.collect(exportHistogram(histogram));
-                    } finally {
-                        histogram = null;
-                    }
+            } else {
+                if (timestamp % MEASUREMENT_REPORTING_INTERVAL_MS == 0) {
+                    System.out.println(timeMsg);
+                }
+                histogram.recordValue(timestampAndLatency.f1);
+            }
+            if (timestamp >= totalTimeMillis) {
+                try {
+                    collector.collect(exportHistogram(histogram));
+                } finally {
+                    histogram = null;
                 }
             }
-        };
-    }
+        }
 
-    private static String exportHistogram(Histogram histogram) {
-        ByteArrayOutputStream bos = new ByteArrayOutputStream();
-        PrintStream out = new PrintStream(bos);
-        histogram.outputPercentileDistribution(out, 1.0);
-        out.close();
-        return bos.toString();
+        private static String exportHistogram(Histogram histogram) {
+            ByteArrayOutputStream bos = new ByteArrayOutputStream();
+            PrintStream out = new PrintStream(bos);
+            histogram.outputPercentileDistribution(out, 1.0);
+            out.close();
+            return bos.toString();
+        }
+
+        private Object readResolve() throws ObjectStreamException {
+            initializeHistogram();
+            return this;
+        }
     }
 
     private static StreamingFileSink<String> fileSink(String parent, String child) {
