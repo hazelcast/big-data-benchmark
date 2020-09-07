@@ -14,6 +14,7 @@
         <module>common</module>
         <module>kafka-trade-producer</module>
         <module>jet-trade-monitor</module>
+        <module>jet-3_2-trade-monitor</module>
         <module>flink-trade-monitor</module>
         <module>spark-trade-monitor</module>
         <module>latency-parser</module>
