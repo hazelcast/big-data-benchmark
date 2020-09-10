@@ -10,6 +10,7 @@ import org.apache.kafka.common.serialization.IntegerSerializer;
 import java.util.ArrayList;
 import java.util.Arrays;
 import java.util.Collections;
+import java.util.Iterator;
 import java.util.List;
 import java.util.Properties;
 import java.util.concurrent.ExecutorService;
@@ -20,10 +21,12 @@ import static com.hazelcast.jet.benchmark.Util.ensureProp;
 import static com.hazelcast.jet.benchmark.Util.loadProps;
 import static com.hazelcast.jet.benchmark.Util.parseIntProp;
 import static com.hazelcast.jet.benchmark.Util.props;
+import static java.lang.Boolean.parseBoolean;
 import static java.util.concurrent.TimeUnit.MICROSECONDS;
 import static java.util.concurrent.TimeUnit.MILLISECONDS;
 import static java.util.concurrent.TimeUnit.NANOSECONDS;
 import static java.util.concurrent.TimeUnit.SECONDS;
+import static java.util.stream.Collectors.toList;
 
 public class KafkaTradeProducer implements Runnable {
 
@@ -32,6 +35,7 @@ public class KafkaTradeProducer implements Runnable {
     public static final String PROP_NUM_PARALLEL_PRODUCERS = "num-parallel-producers";
     public static final String PROP_TRADES_PER_SECOND = "trades-per-second";
     public static final String PROP_NUM_DISTINCT_KEYS = "num-distinct-keys";
+    public static final String PROP_DEBUG_MODE = "debug-mode";
     public static final String KAFKA_TOPIC = "trades";
 
     private static final int BATCH_SIZE = 256;
@@ -43,9 +47,9 @@ public class KafkaTradeProducer implements Runnable {
     private final long startNanoTime;
     private final long nanoTimeMillisToCurrentTimeMillis;
     private final KafkaProducer<String, Trade> kafkaProducer;
-    private final String[] tickers;
+    private final CircularCursor<CircularCursor<String>> partitionAndTickerCursor;
+    private final boolean debugMode;
 
-    private int currentTickerIndex;
     private long lastReportNanoTime;
     private long nowNanos;
     private long producedCount;
@@ -55,19 +59,23 @@ public class KafkaTradeProducer implements Runnable {
     private KafkaTradeProducer(
             int threadIndex, int numThreads,
             KafkaProducer<String, Trade> kafkaProducer,
-            double tradesPerSecond, String[] tickers,
-            long startNanoTime, long nanoTimeMillisToCurrentTimeMillis
+            int partitionRangeStart, List<String[]> tickersByPartition, double tradesPerSecond,
+            long startNanoTime, long nanoTimeMillisToCurrentTimeMillis,
+            boolean debugMode
     ) {
         if (tradesPerSecond <= 0) {
             throw new RuntimeException("tradesPerSecond = " + tradesPerSecond);
         }
-        this.kafkaProducer = kafkaProducer;
         this.threadIndex = threadIndex;
-        this.tradesPerNanosecond = tradesPerSecond / NANOS_PER_SECOND;
-        this.startNanoTime = (long) (startNanoTime + ((double) threadIndex / numThreads) / tradesPerNanosecond);
+        this.kafkaProducer = kafkaProducer;
+        this.partitionAndTickerCursor = new CircularCursor<>(
+                tickersByPartition.stream().map(CircularCursor::new).collect(toList()),
+                partitionRangeStart);
         this.lastReportNanoTime = startNanoTime;
         this.nanoTimeMillisToCurrentTimeMillis = nanoTimeMillisToCurrentTimeMillis;
-        this.tickers = tickers;
+        this.debugMode = debugMode;
+        this.tradesPerNanosecond = tradesPerSecond / NANOS_PER_SECOND;
+        this.startNanoTime = (long) (startNanoTime + ((double) threadIndex / numThreads) / tradesPerNanosecond);
     }
 
     public static void main(String[] args) {
@@ -78,33 +86,47 @@ public class KafkaTradeProducer implements Runnable {
             int numThreads = parseIntProp(props, PROP_NUM_PARALLEL_PRODUCERS);
             int tradesPerSecond = parseIntProp(props, PROP_TRADES_PER_SECOND);
             int numDistinctKeys = parseIntProp(props, PROP_NUM_DISTINCT_KEYS);
-            Util.printParams(
-                    PROP_KAFKA_BROKER_URI, brokerUri,
-                    PROP_NUM_PARALLEL_PRODUCERS, numThreads,
-                    PROP_TRADES_PER_SECOND, tradesPerSecond,
-                    PROP_NUM_DISTINCT_KEYS, numDistinctKeys
-            );
+            boolean debugMode = parseBoolean(props.getProperty(PROP_DEBUG_MODE));
             if (tradesPerSecond < 1) {
                 System.err.println(PROP_TRADES_PER_SECOND + " must be positive, but got " + tradesPerSecond);
                 System.exit(1);
             }
-            String[][] tickersByThread = assignTickersToThreads(numThreads, numDistinctKeys);
             Properties kafkaProps = props(
                     "bootstrap.servers", brokerUri,
                     "key.serializer", IntegerSerializer.class.getName(),
                     "value.serializer", KafkaTradeSerializer.class.getName()
             );
+            int numPartitions;
+            try (KafkaProducer<String, Trade> client = new KafkaProducer<>(kafkaProps)) {
+                numPartitions = client.partitionsFor(KAFKA_TOPIC).size();
+            }
+            List<String[]> tickersByPartition = assignTickersToPartitions(numPartitions, numDistinctKeys);
+            Range[] partitionsByThread = distributeRange(numThreads, numPartitions);
             double tradesPerSecondPerProducer = (double) tradesPerSecond / numThreads;
             ExecutorService executorService = Executors.newFixedThreadPool(numThreads);
             long nanoTimeMillisToCurrentTimeMillis = determineTimeOffset();
             long startNanoTime = System.nanoTime() + MILLISECONDS.toNanos(100);
             for (int i = 0; i < numThreads; i++) {
-                KafkaProducer<String, Trade> kafkaProducer = new KafkaProducer<>(kafkaProps);
-                KafkaTradeProducer tradeProducer = new KafkaTradeProducer(i, numThreads, kafkaProducer,
-                        tradesPerSecondPerProducer, tickersByThread[i],
-                        startNanoTime, nanoTimeMillisToCurrentTimeMillis);
+                Range threadPartitions = partitionsByThread[i];
+                int partitionStart = threadPartitions.lowerInclusive;
+                int partitionLimit = threadPartitions.upperExclusive;
+                KafkaTradeProducer tradeProducer = new KafkaTradeProducer(i, numThreads,
+                        new KafkaProducer<>(kafkaProps),
+                        partitionStart,
+                        tickersByPartition.subList(partitionStart, partitionLimit), tradesPerSecondPerProducer,
+                        startNanoTime, nanoTimeMillisToCurrentTimeMillis,
+                        debugMode);
                 executorService.submit(tradeProducer);
             }
+            System.out.println("\nKafka producer started with these settings:");
+            Util.printParams(
+                    PROP_KAFKA_BROKER_URI, brokerUri,
+                    PROP_NUM_PARALLEL_PRODUCERS, numThreads,
+                    PROP_TRADES_PER_SECOND, tradesPerSecond,
+                    PROP_NUM_DISTINCT_KEYS, numDistinctKeys,
+                    PROP_DEBUG_MODE, debugMode
+            );
+            System.out.format("Topic %s has %,d partitions%n%n", KAFKA_TOPIC, numPartitions);
             executorService.shutdown();
         } catch (ValidationException e) {
             System.err.println(e.getMessage());
@@ -176,7 +198,15 @@ public class KafkaTradeProducer implements Runnable {
         for (int i = 0; producedCount < expectedProduced && i < BATCH_SIZE; i++) {
             long timestampNanoTime = startNanoTime + (long) (producedCount / tradesPerNanosecond);
             long timestamp = NANOSECONDS.toMillis(timestampNanoTime) - nanoTimeMillisToCurrentTimeMillis;
+            long start = debugMode ? System.nanoTime() : 0;
             send(nextTrade(timestamp));
+            if (debugMode) {
+                long took = System.nanoTime() - start;
+                if (took > MILLISECONDS.toNanos(1)) {
+                    System.out.printf("%,2d: send %,d took %,d ms%n",
+                            threadIndex, producedCount, NANOSECONDS.toMillis(took));
+                }
+            }
             producedCount++;
             latestTimestampNanoTime = timestampNanoTime;
         }
@@ -187,7 +217,7 @@ public class KafkaTradeProducer implements Runnable {
         if (NANOSECONDS.toSeconds(nanosSinceLastReport) < REPORT_PERIOD_SECONDS) {
             return;
         }
-        System.out.printf("Producer %d: %,.0f events/second, %,d ms behind real time%n",
+        System.out.printf("%,2d: %,.0f events/second, %,d ms behind real time%n",
                 threadIndex,
                 (double) NANOS_PER_SECOND * (producedCount - producedAtLastReport) / nanosSinceLastReport,
                 NANOSECONDS.toMillis(nowNanos - latestTimestampNanoTime));
@@ -196,36 +226,85 @@ public class KafkaTradeProducer implements Runnable {
     }
 
     private Trade nextTrade(long time) {
-        try {
-            return new Trade(time, tickers[currentTickerIndex], 100, 10000);
-        } finally {
-            if (++currentTickerIndex == tickers.length) {
-                currentTickerIndex = 0;
-            }
-        }
+        return new Trade(time, partitionAndTickerCursor.next().next(), 100, 10000);
     }
 
     private void send(Trade trade) {
-        kafkaProducer.send(new ProducerRecord<>(KAFKA_TOPIC, threadIndex, trade.getTime(), null, trade));
+        kafkaProducer.send(new ProducerRecord<>(
+                KAFKA_TOPIC, partitionAndTickerCursor.currIndex(), trade.getTime(), null, trade
+        ));
     }
 
     private static long determineTimeOffset() {
         return NANOSECONDS.toMillis(System.nanoTime()) - System.currentTimeMillis();
     }
 
-    private static String[][] assignTickersToThreads(int numThreads, int numDistinctKeys) {
+    private static List<String[]> assignTickersToPartitions(int numPartitions, int numDistinctKeys) {
         List<String> tickers = generateTickers(numDistinctKeys);
-        String[][] tickersByThread = new String[numThreads][];
-        double tickersPerThread = (double) numDistinctKeys / numThreads;
-        for (int i = 0; i < numThreads; i++) {
-            int lowerBound = (int) Math.round(i * tickersPerThread);
-            int upperBound = (int) Math.round((i + 1) * tickersPerThread);
-            tickersByThread[i] = new String[upperBound - lowerBound];
-            for (int j = lowerBound; j < upperBound; j++) {
-                tickersByThread[i][j - lowerBound] = tickers.get(j);
+        List<String[]> tickersByPartition = new ArrayList<>(numPartitions);
+        Range[] rangesPerPartition = distributeRange(numPartitions, numDistinctKeys);
+        for (int i = 0; i < numPartitions; i++) {
+            Range range = rangesPerPartition[i];
+            int lower = range.lowerInclusive;
+            int upper = range.upperExclusive;
+            String[] partitionTickers = new String[upper - lower];
+            for (int j = lower; j < upper; j++) {
+                partitionTickers[j - lower] = tickers.get(j);
             }
+            tickersByPartition.add(partitionTickers);
         }
-        return tickersByThread;
+        return tickersByPartition;
+    }
+
+    private static Range[] distributeRange(int numDivisions, int fullRange) {
+        double lengthPerThread = (double) fullRange / numDivisions;
+        Range[] rangesByThread = new Range[numDivisions];
+        for (int i = 0; i < numDivisions; i++) {
+            rangesByThread[i] = new Range(
+                    (int) Math.round(i * lengthPerThread),
+                    (int) Math.round((i + 1) * lengthPerThread));
+        }
+        return rangesByThread;
+    }
+
+    private static final class Range {
+        final int lowerInclusive;
+        final int upperExclusive;
+
+        Range(int lowerInclusive, int upperExclusive) {
+            this.lowerInclusive = lowerInclusive;
+            this.upperExclusive = upperExclusive;
+        }
+    }
+
+    private static class CircularCursor<T> {
+        private final List<T> items;
+        private final int resetToIndex;
+        private Iterator<T> iterator;
+        private int currIndex;
+
+        CircularCursor(List<T> items, int baseIndex) {
+            this.items = items;
+            this.iterator = items.iterator();
+            this.resetToIndex = baseIndex - 1;
+        }
+
+        CircularCursor(T[] items) {
+            this(Arrays.asList(items), 0);
+        }
+
+        T next() {
+            if (!iterator.hasNext()) {
+                iterator = items.iterator();
+                currIndex = resetToIndex;
+            }
+            currIndex++;
+            return iterator.next();
+        }
+
+        int currIndex() {
+            return currIndex;
+        }
     }
 
     private static List<String> generateTickers(int numTickers) {
