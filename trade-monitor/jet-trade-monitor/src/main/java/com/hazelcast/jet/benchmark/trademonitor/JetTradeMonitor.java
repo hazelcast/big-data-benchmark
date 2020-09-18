@@ -42,7 +42,7 @@ import static java.util.concurrent.TimeUnit.SECONDS;
 
 public class JetTradeMonitor {
     public static final String DEFAULT_PROPERTIES_FILENAME = "jet-trade-monitor.properties";
-    public static final String PROP_BROKER_URI = "broker-uri";
+    public static final String PROP_KAFKA_BROKER_URI = "kafka-broker-uri";
     public static final String PROP_OFFSET_RESET = "offset-reset";
     public static final String PROP_KAFKA_SOURCE_LOCAL_PARALLELISM = "kafka-source-local-parallelism";
     public static final String PROP_WINDOW_SIZE_MILLIS = "window-size-millis";
@@ -51,9 +51,9 @@ public class JetTradeMonitor {
     public static final String PROP_SNAPSHOT_INTERVAL_MILLIS = "snapshot-interval-millis";
     public static final String PROP_WARMUP_SECONDS = "warmup-seconds";
     public static final String PROP_MEASUREMENT_SECONDS = "measurement-seconds";
+    public static final String PROP_LATENCY_REPORTING_THRESHOLD_MILLIS = "latency-reporting-threshold-millis";
     public static final String PROP_OUTPUT_PATH = "output-path";
 
-    public static final long LATENCY_REPORTING_THRESHOLD_MS = 10;
     public static final long WARMUP_REPORTING_INTERVAL_MS = SECONDS.toMillis(2);
     public static final long MEASUREMENT_REPORTING_INTERVAL_MS = SECONDS.toMillis(10);
     public static final long BENCHMARKING_DONE_REPORT_INTERVAL_MS = SECONDS.toMillis(1);
@@ -63,7 +63,7 @@ public class JetTradeMonitor {
         String propsPath = args.length > 0 ? args[0] : DEFAULT_PROPERTIES_FILENAME;
         Properties props = loadProps(propsPath);
         try {
-            String brokerUri = ensureProp(props, PROP_BROKER_URI);
+            String kafkaBrokerUri = ensureProp(props, PROP_KAFKA_BROKER_URI);
             String offsetReset = ensureProp(props, PROP_OFFSET_RESET);
             int kafkaSourceParallelism = parseIntProp(props, PROP_KAFKA_SOURCE_LOCAL_PARALLELISM);
             int windowSize = parseIntProp(props, PROP_WINDOW_SIZE_MILLIS);
@@ -73,6 +73,7 @@ public class JetTradeMonitor {
             int snapshotInterval = parseIntProp(props, PROP_SNAPSHOT_INTERVAL_MILLIS);
             int warmupSeconds = parseIntProp(props, PROP_WARMUP_SECONDS);
             int measurementSeconds = parseIntProp(props, PROP_MEASUREMENT_SECONDS);
+            int latencyReportingThresholdMs = parseIntProp(props, PROP_LATENCY_REPORTING_THRESHOLD_MILLIS);
             String outputPath = ensureProp(props, PROP_OUTPUT_PATH);
             System.out.format(
                     "Starting Jet Trade Monitor with the following parameters:%n" +
@@ -83,10 +84,11 @@ public class JetTradeMonitor {
                     "Window sliding step               %,d ms%n" +
                     "Processing guarantee              %s%n" +
                     "Snapshot interval                 %,d ms%n" +
-                    "Warmup period                     %,d seconds%n" +
-                    "Measurement period                %,d seconds%n" +
+                    "Warmup period                     %,d s%n" +
+                    "Measurement period                %,d s%n" +
+                    "Latency reporting threshold       %,d ms%n" +
                     "Output path                       %s%n",
-                            brokerUri,
+                            kafkaBrokerUri,
                             offsetReset,
                             kafkaSourceParallelism,
                             windowSize,
@@ -95,9 +97,10 @@ public class JetTradeMonitor {
                             snapshotInterval,
                             warmupSeconds,
                             measurementSeconds,
+                            latencyReportingThresholdMs,
                             outputPath
             );
-            Properties kafkaProps = createKafkaProperties(brokerUri, offsetReset);
+            Properties kafkaProps = createKafkaProperties(kafkaBrokerUri, offsetReset);
 
             Pipeline pipeline = Pipeline.create();
             StreamStage<Tuple2<Long, Long>> latencies = pipeline
@@ -106,11 +109,15 @@ public class JetTradeMonitor {
                             KAFKA_TOPIC))
                     .withNativeTimestamps(0)
                     .setLocalParallelism(kafkaSourceParallelism)
-                    .rebalance()
                     .groupingKey(Trade::getTicker)
                     .window(sliding(windowSize, slideBy))
                     .aggregate(counting())
-                    .mapStateful(DetermineLatency::new, DetermineLatency::map);
+                    .filter(kwr -> {
+                        String ticker = kwr.getKey();
+                        int len = ticker.length();
+                        return ticker.charAt(len - 1) == 'A' && ticker.charAt(len - 2) == 'A';
+                    })
+                    .mapStateful(() -> new DetermineLatency(latencyReportingThresholdMs), DetermineLatency::map);
             long warmupTimeMillis = SECONDS.toMillis(warmupSeconds);
             long totalTimeMillis = SECONDS.toMillis(warmupSeconds + measurementSeconds);
             latencies
@@ -150,7 +157,7 @@ public class JetTradeMonitor {
                     "The default properties file is " + DEFAULT_PROPERTIES_FILENAME + " in the current directory.");
             System.err.println();
             System.err.println("An example of the required properties:");
-            System.err.println(PROP_BROKER_URI + "=localhost:9092");
+            System.err.println(PROP_KAFKA_BROKER_URI + "=localhost:9092");
             System.err.println("# earliest or latest:");
             System.err.println(PROP_OFFSET_RESET + "=latest");
             System.err.println(PROP_KAFKA_SOURCE_LOCAL_PARALLELISM + "=4");
@@ -161,6 +168,7 @@ public class JetTradeMonitor {
             System.err.println(PROP_SNAPSHOT_INTERVAL_MILLIS + "=10_000");
             System.err.println(PROP_WARMUP_SECONDS + "=40");
             System.err.println(PROP_MEASUREMENT_SECONDS + "=240");
+            System.err.println(PROP_LATENCY_REPORTING_THRESHOLD_MILLIS + "=20");
             System.err.println(PROP_OUTPUT_PATH + "=benchmark-results");
             System.exit(1);
         }
@@ -178,8 +186,13 @@ public class JetTradeMonitor {
     }
 
     private static class DetermineLatency implements Serializable {
+        private final long latencyReportingThresholdMs;
         private long startTimestamp;
         private long lastTimestamp;
+
+        DetermineLatency(long latencyReportingThresholdMs) {
+            this.latencyReportingThresholdMs = latencyReportingThresholdMs;
+        }
 
         Tuple2<Long, Long> map(KeyedWindowResult<String, Long> kwr) {
             long timestamp = kwr.end();
@@ -199,7 +212,7 @@ public class JetTradeMonitor {
             if (latency < 0) {
                 throw new RuntimeException("Negative latency: " + latency);
             }
-            if (latency >= LATENCY_REPORTING_THRESHOLD_MS) {
+            if (latency >= latencyReportingThresholdMs) {
                 System.out.format("Latency %,d ms (first seen key: %s, count %,d)%n", latency, kwr.getKey(), count);
             }
             return tuple2(timestamp - startTimestamp, latency);
