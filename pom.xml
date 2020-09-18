@@ -29,7 +29,7 @@
         <flink.scala.version>2.12</flink.scala.version>
         <spark.version>2.3.0</spark.version>
         <spark.scala.version>2.11</spark.scala.version>
-        <kafka.version>1.0.1</kafka.version>
+        <kafka.version>2.6.0</kafka.version>
     </properties>
 
     <repositories>
