@@ -10,6 +10,8 @@ import org.apache.kafka.clients.consumer.KafkaConsumer;
 import org.apache.kafka.common.TopicPartition;
 import org.apache.kafka.common.serialization.IntegerDeserializer;
 
+import java.io.FileOutputStream;
+import java.io.PrintStream;
 import java.time.Duration;
 import java.time.temporal.ChronoUnit;
 import java.util.Properties;
@@ -33,10 +35,11 @@ public class KafkaConsumerBenchmark {
     public static final String PROP_WARMUP_SECONDS = "warmup-seconds";
     public static final String PROP_MEASUREMENT_SECONDS = "measurement-seconds";
     public static final String PROP_LATENCY_REPORTING_THRESHOLD_MILLIS = "latency-reporting-threshold-millis";
+    private static final String PROP_LATENCY_HISTOGRAM_FILE = "latency-histogram-file";
 
     private static final Duration ONE_SECOND = Duration.of(1, ChronoUnit.SECONDS);
 
-    public static void main(String[] args) {
+    public static void main(String[] args) throws Exception {
         String propsPath = args.length > 0 ? args[0] : DEFAULT_PROPERTIES_FILENAME;
         Properties props = loadProps(propsPath);
         try {
@@ -45,6 +48,7 @@ public class KafkaConsumerBenchmark {
             int measurementSeconds = parseIntProp(props, PROP_MEASUREMENT_SECONDS);
             int latencyReportingThresholdMs = parseIntProp(props, PROP_LATENCY_REPORTING_THRESHOLD_MILLIS);
             int partitionCount = parseIntProp(props, PROP_PARTITION_COUNT);
+            String histogramFile = ensureProp(props, PROP_LATENCY_HISTOGRAM_FILE);
 
             KafkaConsumer<Long, Trade> consumer = new KafkaConsumer<>(props(
                     "bootstrap.servers", brokerUri,
@@ -61,12 +65,10 @@ public class KafkaConsumerBenchmark {
             long measurementStart = benchmarkStart + SECONDS.toMillis(warmupSeconds);
             long benchmarkEnd = measurementStart + SECONDS.toMillis(measurementSeconds);
             long lastReport = benchmarkStart;
-            while (true) {
+            long now;
+            do {
                 ConsumerRecords<Long, Trade> records = consumer.poll(ONE_SECOND);
-                long now = System.currentTimeMillis();
-                if (now >= benchmarkEnd) {
-                    break;
-                }
+                now = System.currentTimeMillis();
                 if (now - lastReport >= SECONDS.toMillis(5)) {
                     if (now < measurementStart) {
                         System.out.format("Warmup %,d/%,d seconds%n",
@@ -79,9 +81,6 @@ public class KafkaConsumerBenchmark {
                     }
                     lastReport = now;
                 }
-                if (records.isEmpty()) {
-                    continue;
-                }
                 long batchLatency = 0;
                 for (ConsumerRecord<Long, Trade> record : records) {
                     long latency = now - record.value().getTime();
@@ -93,8 +92,8 @@ public class KafkaConsumerBenchmark {
                 if (batchLatency > latencyReportingThresholdMs) {
                     System.out.format("Latency %,d ms%n", batchLatency);
                 }
-            }
-            histogram.outputPercentileDistribution(System.out, 1.0);
+            } while (now < benchmarkEnd);
+            histogram.outputPercentileDistribution(new PrintStream(new FileOutputStream(histogramFile)), 1.0);
         } catch (ValidationException e) {
             System.err.println(e.getMessage());
             System.err.println();
