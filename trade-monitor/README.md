@@ -217,7 +217,7 @@ Created topic trades.
 $ fg
 ```
 
-## Set Up And Run Hazelcast Jet
+## Set Up Hazelcast Jet
 
 ### Install Hazelcast Jet
 
