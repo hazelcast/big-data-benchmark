@@ -48,8 +48,8 @@ ports open, the `Kafka-*` machines need the Kafka port, `Kafka-1`
 additionally needs the ZooKeeper port, and the `Jet-*` machines need the
 Hazelcast port range. Jet will actually only use one port (5701), but
 the auto-discovery process scans a few of the neighboring ports where
-Jet might also be listening, and if they aren't open, auto-discovey will
-have to wait out the connection timeout for each of them.
+Jet might also be listening, and if they aren't open, auto-discovery
+will have to wait out the connection timeout for each of them.
 
 ## Build and Upload the Benchmark Code
 
@@ -58,15 +58,17 @@ On local machine (assuming Java and Maven already installed), do these:
 ```bash
 $ cd /path/to/big-data-benchmark/trade-monitor
 $ mvn clean package
-<Maven output ending with BUILD SUCCESS>
+...
+[INFO] ------------------------------------------------------------------------
+[INFO] BUILD SUCCESS
+[INFO] ------------------------------------------------------------------------
+[INFO] Total time:  11.864 s
+[INFO] Finished at: 2020-10-05T20:31:08+02:00
+[INFO] ------------------------------------------------------------------------
 $ cd kafka-trade-producer
-$ scp kafka-trade-producer.properties \
-  target/kafka-trade-producer-1.0-SNAPSHOT.jar \
-  ec2-user@<producer-public-ip>:
+$ scp kafka-trade-producer.properties target/kafka-trade-producer-1.0-SNAPSHOT.jar ec2-user@<producer-public-ip>:
 $ cd ../jet-trade-monitor
-$ scp jet-trade-monitor.properties \
-  target/jet-trade-monitor-1.0-SNAPSHOT.jar \
-  ec2-user@<producer-public-ip>:
+$ scp jet-trade-monitor.properties target/jet-trade-monitor-1.0-SNAPSHOT.jar ec2-user@<producer-public-ip>:
 ```
 
 ## Install Java
@@ -191,7 +193,8 @@ For comparison, Kafka uses these setting by default:
 
 ```bash
 KAFKA_HEAP_OPTS="-Xms1g -Xmx1g"
-KAFKA_JVM_PERFORMANCE_OPTS="-server -XX:+UseG1GC -XX:MaxGCPauseMillis=20 -XX:InitiatingHeapOccupancyPercent=35 -XX:+ExplicitGCInvokesConcurrent
+KAFKA_JVM_PERFORMANCE_OPTS="-server -XX:+UseG1GC -XX:MaxGCPauseMillis=20
+-XX:InitiatingHeapOccupancyPercent=35 -XX:+ExplicitGCInvokesConcurrent
 -XX:MaxInlineLevel=15 -Djava.awt.headless=true"
 ```
 
@@ -284,6 +287,8 @@ hazelcast-jet:
   instance:
     cooperative-thread-count: 12
 ```
+
+On all `Jet-*` instances, do this to start Jet:
 
 ```bash
 $ JAVA_HOME=/home/ec2-user/jdk-15 \
@@ -384,7 +389,7 @@ threads will remain idle.
 
 ### Run the Event Producer And the Benchmark Job
 
-In one SSH session with `Producer:
+In one SSH session with `Producer`:
 
 ```bash
 $ java -jar kafka-trade-producer-1.0-SNAPSHOT.jar
