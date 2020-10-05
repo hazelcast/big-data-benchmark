@@ -69,7 +69,7 @@ $ scp jet-trade-monitor.properties \
   ec2-user@<producer-public-ip>:
 ```
 
-### Install Java
+## Install Java
 
 To replicate the setup on many nodes, we recommend using a terminal
 emulator that can broadcast your typing to several SSH sessions at once.
@@ -217,6 +217,8 @@ Created topic trades.
 $ fg
 ```
 
+## Set Up And Run Hazelcast Jet
+
 ### Install Hazelcast Jet
 
 Do this on all `Jet-*` instances as well as `Producer`:
@@ -246,7 +248,7 @@ export PATH=$PATH:/home/ec2-user/hazelcast-jet-4.2/bin
 
 Log out and back in for the path to take effect.
 
-### Set Up and Run the Jet Cluster
+### Configure and Run the Jet Cluster
 
 For this step you need your AWS access key ID and secret access key. On
 all `Jet-*` instances do this:
@@ -296,6 +298,8 @@ Members {size:3, ver:3} [
 	Member [10.0.0.168]:5701 - 2cf59cdc-3514-4cb3-8048-3829e549bd03
 ]
 ```
+
+## Run the Benchmark
 
 ### Configure the Trade Event Producer
 
@@ -483,7 +487,7 @@ When you see the "benchmarking is done" message, use Ctrl-C to first
 kill the event producer, then the `jet submit` process, and then the
 entire Jet cluster.
 
-### Collect the Benchmark Results
+## Collect the Benchmark Results
 
 The results may be on any Jet node. To find them, do this on all the
 `Jet-*` instances:
@@ -534,7 +538,7 @@ $ cd /path/to/hazelcast-jet/benchmark-results/latency-log
 $ gnuplot -e "set datafile separator ','; plot '0'; pause -1"
 ```
 
-### Clean up Kafka
+## Clean up Kafka
 
 Since the benchmark produces a lot of data to Kafka, which holds on to
 it for a long time, it is a good idea to clean up Kafka storage after
