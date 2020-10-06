@@ -80,6 +80,12 @@ On all the EC2 instances, do this:
 
 ```bash
 $ wget https://download.java.net/java/GA/jdk15/779bf45e88a44cbd9ea6621d33e33db1/36/GPL/openjdk-15_linux-x64_bin.tar.gz
+...
+Connecting to download.java.net (download.java.net)|104.70.188.49|:443... connected.
+HTTP request sent, awaiting response... 200 OK
+Length: 195313679 (186M) [application/x-gzip]
+Saving to: ‘openjdk-15_linux-x64_bin.tar.gz’
+...
 $ tar xvf openjdk-15_linux-x64_bin.tar.gz
 ```
 
