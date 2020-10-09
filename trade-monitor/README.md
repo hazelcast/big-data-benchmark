@@ -256,8 +256,9 @@ Log out and back in for the path to take effect.
 
 ### Configure and Run the Jet Cluster
 
-For this step you need your AWS access key ID and secret access key. On
-all `Jet-*` instances do this:
+For this step you need your AWS access key ID and secret access key.
+
+On all `Jet-*` instances do this:
 
 ```bash
 vi hazelcast-jet-4.2/config/hazelcast.yaml
@@ -292,7 +293,7 @@ hazelcast-jet:
     cooperative-thread-count: 12
 ```
 
-On all `Jet-*` instances, do this to start Jet:
+Start Jet:
 
 ```bash
 $ JAVA_HOME=/home/ec2-user/jdk-15 \
