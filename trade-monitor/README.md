@@ -35,21 +35,18 @@ window aggregation on them with a distributed stream processing engine.
 3. Open these inbound ports, CIDR 10.0.0.0/24:
 
 ```text
-    Port Range   Purpose
-    -----------  ----------
-    2181         ZooKeeper
-    9020         Kafka
-    5701-5710    Hazelcast
+    Port   Purpose
+    ----   ---------
+    2181   ZooKeeper
+    9020   Kafka
+    5701   Hazelcast
 ```
 
 We used a single EC2 Security Group with all these open ports, but if
 you prefer to open the very minimum, `Producer` doesn't need any inbound
 ports open, the `Kafka-*` machines need the Kafka port, `Kafka-1`
 additionally needs the ZooKeeper port, and the `Jet-*` machines need the
-Hazelcast port range. Jet will actually only use one port (5701), but
-the auto-discovery process scans a few of the neighboring ports where
-Jet might also be listening, and if they aren't open, auto-discovery
-will have to wait out the connection timeout for each of them.
+Hazelcast port.
 
 ## Build and Upload the Benchmark Code
 
@@ -282,6 +279,7 @@ network:join:aws:
     <delete security-group-name>
     tag-key: JetClusterName
     tag-value: BigDataBenchmark
+    hz-port: 5701
 ```
 
 ```bash
