@@ -407,30 +407,30 @@ Kafka producer started with these settings:
     debug-mode=false
 Topic trades has 24 partitions
 
- 6: 372,848 events/second, 210 ms behind real time
- 2: 377,305 events/second, 189 ms behind real time
- 9: 389,485 events/second, 130 ms behind real time
- 4: 357,037 events/second, 286 ms behind real time
- 0: 391,679 events/second, 119 ms behind real time
- 5: 361,419 events/second, 265 ms behind real time
- 7: 374,384 events/second, 202 ms behind real time
- 1: 318,415 events/second, 471 ms behind real time
-11: 356,224 events/second, 290 ms behind real time
- 3: 350,207 events/second, 319 ms behind real time
- 8: 390,516 events/second, 125 ms behind real time
-10: 352,510 events/second, 307 ms behind real time
-10: 480,823 events/second, 0 ms behind real time
- 1: 514,934 events/second, 0 ms behind real time
- 5: 471,923 events/second, 0 ms behind real time
- 7: 458,952 events/second, 0 ms behind real time
- 0: 441,655 events/second, 0 ms behind real time
- 8: 442,818 events/second, 0 ms behind real time
-11: 477,109 events/second, 0 ms behind real time
- 6: 460,488 events/second, 0 ms behind real time
- 3: 483,127 events/second, 0 ms behind real time
- 9: 443,850 events/second, 0 ms behind real time
- 2: 456,047 events/second, 0 ms behind real time
- 4: 476,310 events/second, 0 ms behind real time
+ 6: 372,848 events/second, 210 ms worst latency
+ 2: 377,305 events/second, 189 ms worst latency
+ 9: 389,485 events/second, 130 ms worst latency
+ 4: 357,037 events/second, 286 ms worst latency
+ 0: 391,679 events/second, 119 ms worst latency
+ 5: 361,419 events/second, 265 ms worst latency
+ 7: 374,384 events/second, 202 ms worst latency
+ 1: 318,415 events/second, 471 ms worst latency
+11: 356,224 events/second, 290 ms worst latency
+ 3: 350,207 events/second, 319 ms worst latency
+ 8: 390,516 events/second, 125 ms worst latency
+10: 352,510 events/second, 307 ms worst latency
+10: 480,823 events/second, 19 ms worst latency
+ 1: 514,934 events/second, 24 ms worst latency
+ 5: 471,923 events/second, 7 ms worst latency
+ 7: 458,952 events/second, 16 ms worst latency
+ 0: 441,655 events/second, 30 ms worst latency
+ 8: 442,818 events/second, 10 ms worst latency
+11: 477,109 events/second, 5 ms worst latency
+ 6: 460,488 events/second, 2 ms worst latency
+ 3: 483,127 events/second, 4 ms worst latency
+ 9: 443,850 events/second, 7 ms worst latency
+ 2: 456,047 events/second, 12 ms worst latency
+ 4: 476,310 events/second, 2 ms worst latency
 ...
 ```
 
@@ -558,7 +558,19 @@ each run. Do this on all three `Kafka-*` instances:
 <Type Ctrl-C>
 ...
 [2020-10-05 13:56:28,939] INFO [KafkaServer id=1001] shut down completed (kafka.server.KafkaServer)
-$ rm -r ~/big/kafka-logs
+```
+
+Then, on `Kafka-1`, shut down ZooKeeper:
+
+```sh
+$ fg
+<Type Ctrl-C>
+```
+
+Then, on all three `Kafka-*` instances, delete all the data:
+
+```sh
+$ rm -r ~/big/*
 ```
 
 The Kafka topic metadata is stored in ZooKeeper so you don't have to

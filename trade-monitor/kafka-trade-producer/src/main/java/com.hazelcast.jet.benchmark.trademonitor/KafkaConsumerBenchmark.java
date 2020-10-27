@@ -105,9 +105,11 @@ public class KafkaConsumerBenchmark {
             System.err.println();
             System.err.println("An example of the required properties:");
             System.err.println(PROP_KAFKA_BROKER_URI + "=localhost:9092");
+            System.err.println(PROP_PARTITION_COUNT + "=8");
             System.err.println(PROP_WARMUP_SECONDS + "=10");
             System.err.println(PROP_MEASUREMENT_SECONDS + "=50");
             System.err.println(PROP_LATENCY_REPORTING_THRESHOLD_MILLIS + "=20");
+            System.err.println(PROP_LATENCY_HISTOGRAM_FILE + "=latency-histogram.txt");
             System.exit(1);
         }
     }

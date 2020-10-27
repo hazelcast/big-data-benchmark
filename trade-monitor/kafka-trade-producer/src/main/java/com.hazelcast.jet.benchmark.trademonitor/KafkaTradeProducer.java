@@ -22,6 +22,7 @@ import static com.hazelcast.jet.benchmark.Util.loadProps;
 import static com.hazelcast.jet.benchmark.Util.parseIntProp;
 import static com.hazelcast.jet.benchmark.Util.props;
 import static java.lang.Boolean.parseBoolean;
+import static java.lang.Math.max;
 import static java.util.concurrent.TimeUnit.MICROSECONDS;
 import static java.util.concurrent.TimeUnit.MILLISECONDS;
 import static java.util.concurrent.TimeUnit.NANOSECONDS;
@@ -54,7 +55,7 @@ public class KafkaTradeProducer implements Runnable {
     private long nowNanos;
     private long producedCount;
     private long producedAtLastReport;
-    private long latestTimestampNanoTime;
+    private long worstLatencySinceLastReport;
 
     private KafkaTradeProducer(
             int threadIndex, int numThreads,
@@ -195,8 +196,9 @@ public class KafkaTradeProducer implements Runnable {
     }
 
     private void produceUntil(long expectedProduced) {
+        worstLatencySinceLastReport = max(worstLatencySinceLastReport, nowNanos - nanoTimestampToEmit());
         for (int i = 0; producedCount < expectedProduced && i < BATCH_SIZE; i++) {
-            long timestampNanoTime = startNanoTime + (long) (producedCount / tradesPerNanosecond);
+            long timestampNanoTime = nanoTimestampToEmit();
             long timestamp = NANOSECONDS.toMillis(timestampNanoTime) - nanoTimeMillisToCurrentTimeMillis;
             long start = debugMode ? System.nanoTime() : 0;
             send(nextTrade(timestamp));
@@ -208,8 +210,11 @@ public class KafkaTradeProducer implements Runnable {
                 }
             }
             producedCount++;
-            latestTimestampNanoTime = timestampNanoTime;
         }
+    }
+
+    private long nanoTimestampToEmit() {
+        return startNanoTime + (long) (producedCount / tradesPerNanosecond);
     }
 
     private void reportThroughput() {
@@ -217,10 +222,11 @@ public class KafkaTradeProducer implements Runnable {
         if (NANOSECONDS.toSeconds(nanosSinceLastReport) < REPORT_PERIOD_SECONDS) {
             return;
         }
-        System.out.printf("%,2d: %,.0f events/second, %,d ms behind real time%n",
+        System.out.printf("%,2d: %,.0f events/second, %,d ms worst latency%n",
                 threadIndex,
                 (double) NANOS_PER_SECOND * (producedCount - producedAtLastReport) / nanosSinceLastReport,
-                NANOSECONDS.toMillis(nowNanos - latestTimestampNanoTime));
+                NANOSECONDS.toMillis(worstLatencySinceLastReport));
+        worstLatencySinceLastReport = 0;
         producedAtLastReport = producedCount;
         lastReportNanoTime = nowNanos;
     }
