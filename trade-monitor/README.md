@@ -14,7 +14,21 @@ window aggregation on them with a distributed stream processing engine.
 
 ## Set Up EC2 Instances
 
-1. Create these EC2 instances:
+1. Create a _placement group_ with the _cluster_ placement strategy.
+
+2. Create a Security group with these inbound rules:
+
+```text
+    Port     CIDR      Purpose
+    ----  -----------  ---------
+      22   0.0.0.0/0   SSH
+    2181  10.0.0.0/24  ZooKeeper
+    9020  10.0.0.0/24  Kafka
+    5701  10.0.0.0/24  Hazelcast
+```
+
+3. Create these EC2 instances, making sure you use the placement and
+  security groups you created above:
 
 ```text
     Name       Type
@@ -28,25 +42,9 @@ window aggregation on them with a distributed stream processing engine.
   Jet-3      c5.4xlarge
 ```
 
-2. Set a tag on the `Jet-*` instances for automatic cluster discovery.
+4. Set a tag on the `Jet-*` instances for automatic cluster discovery.
    For example, create a tag `JetClusterName = BigDataBenchmark`. You'll
    use this later in Jet configuration.
-
-3. Open these inbound ports, CIDR 10.0.0.0/24:
-
-```text
-    Port   Purpose
-    ----   ---------
-    2181   ZooKeeper
-    9020   Kafka
-    5701   Hazelcast
-```
-
-We used a single EC2 Security Group with all these open ports, but if
-you prefer to open the very minimum, `Producer` doesn't need any inbound
-ports open, the `Kafka-*` machines need the Kafka port, `Kafka-1`
-additionally needs the ZooKeeper port, and the `Jet-*` machines need the
-Hazelcast port.
 
 ## Build and Upload the Benchmark Code
 
@@ -206,6 +204,10 @@ So our changes are these:
 1. enabled ZGC instead of G1 GC
 2. increased heap size: 1 GB -> 4 GB
 3. removed G1-specific `MaxGCPauseMillis` and `InitiatingHeapOccupancyPercent`
+
+Kafka doesn't use more than 1 GB of heap, however it helps ZGC to have
+more headroom while it's catching up with allocation rate in the
+background.
 
 ### Create the `trades` Topic
 
@@ -573,5 +575,4 @@ Then, on all three `Kafka-*` instances, delete all the data:
 $ rm -r ~/big/*
 ```
 
-The Kafka topic metadata is stored in ZooKeeper so you don't have to
-re-create it.
+This deletes the topic as well, you have to re-create it.
