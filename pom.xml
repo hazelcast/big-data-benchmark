@@ -12,6 +12,7 @@
     <modules>
         <module>word-count</module>
         <module>trade-monitor</module>
+        <module>nexmark-jet</module>
     </modules>
     <properties>
         <main.basedir>${project.basedir}</main.basedir>
