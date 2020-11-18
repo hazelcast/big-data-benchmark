@@ -1,10 +1,6 @@
-.clover/
 target/
 .project
-.classpath
-.settings/
 .idea/
-.patch
 .vscode
 .surefire-*
 *.iml
@@ -12,7 +8,5 @@ target/
 *.iws
 .DS_Store
 reports/
-.directory
-atlassian-ide-plugin.xml
-.attach_pid*
+results/
 dependency-reduced-pom.xml

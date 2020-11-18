@@ -11,6 +11,9 @@ import com.hazelcast.jet.core.Watermark;
 import com.hazelcast.jet.pipeline.Sources;
 import com.hazelcast.jet.pipeline.StreamSource;
 
+import java.util.Random;
+import java.util.concurrent.ThreadLocalRandom;
+
 import static com.hazelcast.jet.impl.JetEvent.jetEvent;
 import static java.util.concurrent.TimeUnit.HOURS;
 import static java.util.concurrent.TimeUnit.MILLISECONDS;
@@ -26,14 +29,15 @@ public class BidSourceP extends AbstractProcessor {
             MILLISECONDS.toNanos(SOURCE_THROUGHPUT_REPORTING_PERIOD_MILLIS);
     private static final long HICCUP_REPORT_THRESHOLD_MILLIS = 10;
 
-    private final long nanoTimeMillisToCurrentTimeMillis = determineTimeOffset();
-    private final long startTime;
     private final long itemsPerSecond;
+    private final int numDistinctKeys;
+    private final long startTime;
     private final boolean isReportingThroughput;
+    private final long nanoTimeMillisToCurrentTimeMillis = determineTimeOffset();
     private final long wmGranularity;
     private final long wmOffset;
-    private long globalProcessorIndex;
-    private long totalParallelism;
+    private int globalProcessorIndex;
+    private int totalParallelism;
     private long emitPeriod;
 
     private final AppendableTraverser<Object> traverser = new AppendableTraverser<>(2);
@@ -48,23 +52,34 @@ public class BidSourceP extends AbstractProcessor {
     BidSourceP(
             long startTime,
             long itemsPerSecond,
+            int numDistinctKeys,
             EventTimePolicy<? super Bid> eventTimePolicy,
             boolean shouldReportThroughput
     ) {
-        this.wmGranularity = eventTimePolicy.watermarkThrottlingFrameSize();
-        this.wmOffset = eventTimePolicy.watermarkThrottlingFrameOffset();
+        this.numDistinctKeys = numDistinctKeys;
         this.startTime = MILLISECONDS.toNanos(startTime + nanoTimeMillisToCurrentTimeMillis);
         this.itemsPerSecond = itemsPerSecond;
         this.isReportingThroughput = shouldReportThroughput;
+        wmGranularity = eventTimePolicy.watermarkThrottlingFrameSize();
+        wmOffset = eventTimePolicy.watermarkThrottlingFrameOffset();
+    }
+
+    @Override
+    protected void init(Context context) {
+        totalParallelism = context.totalParallelism();
+        globalProcessorIndex = context.globalProcessorIndex();
+        emitPeriod = SECONDS.toNanos(1) * totalParallelism / itemsPerSecond;
+        lastCallNanos = lastReport = emitSchedule =
+                startTime + SECONDS.toNanos(1) * globalProcessorIndex / itemsPerSecond;
     }
 
     @SuppressWarnings("SameParameterValue")
-    public static StreamSource<Bid> bidSource(long itemsPerSecond, long initialDelay) {
+    public static StreamSource<Bid> bidSource(long itemsPerSecond, int numDistinctKeys, long initialDelayMs) {
         return Sources.streamFromProcessorWithWatermarks("longs", true, eventTimePolicy -> ProcessorMetaSupplier.of(
                 (Address ignored) -> {
-                    long startTime = System.currentTimeMillis() + initialDelay;
+                    long startTime = System.currentTimeMillis() + initialDelayMs;
                     return ProcessorSupplier.of(() ->
-                            new BidSourceP(startTime, itemsPerSecond, eventTimePolicy, true));
+                            new BidSourceP(startTime, itemsPerSecond, numDistinctKeys, eventTimePolicy, true));
                 })
         );
     }
@@ -80,15 +95,6 @@ public class BidSourceP extends AbstractProcessor {
     }
 
     @Override
-    protected void init(Context context) {
-        totalParallelism = context.totalParallelism();
-        globalProcessorIndex = context.globalProcessorIndex();
-        emitPeriod = SECONDS.toNanos(1) * totalParallelism / itemsPerSecond;
-        lastCallNanos = lastReport = emitSchedule =
-                startTime + SECONDS.toNanos(1) * globalProcessorIndex / itemsPerSecond;
-    }
-
-    @Override
     public boolean complete() {
         nowNanos = System.nanoTime();
         emitEvents();
@@ -101,13 +107,15 @@ public class BidSourceP extends AbstractProcessor {
 
     @SuppressWarnings("ResultOfMethodCallIgnored")
     private void emitEvents() {
+        Random rnd = ThreadLocalRandom.current();
         while (emitFromTraverser(traverser) && emitSchedule <= nowNanos) {
             long timestamp = NANOSECONDS.toMillis(emitSchedule) - nanoTimeMillisToCurrentTimeMillis;
+            long seq = counter * totalParallelism + globalProcessorIndex;
             Bid bid = new Bid(
-                    counter * totalParallelism + globalProcessorIndex,
+                    seq,
                     timestamp,
-                    0,
-                    100
+                    seq % numDistinctKeys,
+                    rnd.nextInt(1_000_000)
             );
             traverser.append(jetEvent(timestamp, bid));
             counter++;

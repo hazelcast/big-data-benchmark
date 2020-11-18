@@ -39,7 +39,7 @@ public class Bid {
 
         @Override
         public int getTypeId() {
-            return 0;
+            return 1;
         }
 
         @Override
