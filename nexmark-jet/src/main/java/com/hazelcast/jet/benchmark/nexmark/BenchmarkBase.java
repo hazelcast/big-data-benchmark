@@ -1,6 +1,7 @@
 package com.hazelcast.jet.benchmark.nexmark;
 
 import com.hazelcast.function.ToLongFunctionEx;
+import com.hazelcast.internal.util.HashUtil;
 import com.hazelcast.jet.Jet;
 import com.hazelcast.jet.benchmark.nexmark.model.Bid;
 import com.hazelcast.jet.config.JobConfig;
@@ -20,13 +21,12 @@ import java.io.Serializable;
 import java.util.Properties;
 import java.util.function.ToLongFunction;
 
-import static com.hazelcast.jet.benchmark.nexmark.BidSourceP.bidSource;
-import static com.hazelcast.jet.benchmark.nexmark.BidSourceP.simpleTime;
+import static com.hazelcast.jet.benchmark.nexmark.EventSourceP.simpleTime;
 import static com.hazelcast.jet.datamodel.Tuple2.tuple2;
 import static java.util.concurrent.TimeUnit.SECONDS;
 
 public abstract class BenchmarkBase {
-    public static final String MAIN_PROPS_FILENAME = "nexmark-jet.properties";
+    public static final String PROPS_FILENAME = "nexmark-jet.properties";
     public static final String PROP_EVENTS_PER_SECOND = "events-per-second";
     public static final String PROP_NUM_DISTINCT_KEYS = "num-distinct-keys";
     public static final String PROP_WINDOW_SIZE_MILLIS = "window-size-millis";
@@ -62,7 +62,7 @@ public abstract class BenchmarkBase {
 
     @SuppressWarnings("ConstantConditions")
     void run() {
-        Properties props = loadProps(benchmarkName + ".properties");
+        Properties props = loadProps();
         var jobCfg = new JobConfig();
         jobCfg.setName(benchmarkName);
         jobCfg.registerSerializer(Bid.class, Bid.BidSerializer.class);
@@ -70,6 +70,8 @@ public abstract class BenchmarkBase {
         try {
             int eventsPerSecond = parseIntProp(props, PROP_EVENTS_PER_SECOND);
             int numDistinctKeys = parseIntProp(props, PROP_NUM_DISTINCT_KEYS);
+            int windowSize = parseIntProp(props, PROP_WINDOW_SIZE_MILLIS);
+            long slideBy = parseIntProp(props, PROP_SLIDING_STEP_MILLIS);
             int warmupSeconds = parseIntProp(props, PROP_WARMUP_SECONDS);
             int measurementSeconds = parseIntProp(props, PROP_MEASUREMENT_SECONDS);
             latencyReportingThresholdMs = parseIntProp(props, PROP_LATENCY_REPORTING_THRESHOLD_MILLIS);
@@ -77,12 +79,18 @@ public abstract class BenchmarkBase {
             System.out.printf(
                     "Benchmark name               %s%n" +
                     "Events per second            %,d%n" +
+                    "Distinct keys                %,d%n" +
+                    "Window size                  %,d ms%n" +
+                    "Sliding step                 %,d ms%n" +
                     "Warmup period                %,d s%n" +
                     "Measurement period           %,d s%n" +
                     "Latency reporting threshold  %,d ms%n" +
                     "Output path                  %s%n",
                     benchmarkName,
                     eventsPerSecond,
+                    numDistinctKeys,
+                    windowSize,
+                    slideBy,
                     warmupSeconds,
                     measurementSeconds,
                     latencyReportingThresholdMs,
@@ -92,10 +100,7 @@ public abstract class BenchmarkBase {
             long totalTimeMillis = SECONDS.toMillis(warmupSeconds + measurementSeconds);
 
             var pipeline = Pipeline.create();
-            var input = pipeline
-                    .readFrom(bidSource(eventsPerSecond, numDistinctKeys, INITIAL_SOURCE_DELAY_MILLIS))
-                    .withNativeTimestamps(0);
-            var latencies = addComputation(input, props);
+            var latencies = addComputation(pipeline, props);
             latencies.filter(t2 -> t2.f0() < totalTimeMillis)
                      .map(t2 -> String.format("%d,%d", t2.f0(), t2.f1()))
                      .writeTo(Sinks.files(new File(outputPath, "log").getPath()));
@@ -114,21 +119,18 @@ public abstract class BenchmarkBase {
     }
 
     abstract StreamStage<Tuple2<Long, Long>> addComputation(
-            StreamStage<Bid> p, Properties props
+            Pipeline pipeline, Properties props
     ) throws ValidationException;
 
-    static Properties loadProps(String propsPath) {
-        String resolvedPropsPath = new File(propsPath).getAbsolutePath();
-        System.out.println("Configuration file: " + resolvedPropsPath);
+    static Properties loadProps() {
         Properties props = new Properties();
         try {
-            props.load(new FileInputStream(MAIN_PROPS_FILENAME));
-            props.load(new FileInputStream(propsPath));
+            props.load(new FileInputStream(PROPS_FILENAME));
         } catch (FileNotFoundException e) {
             System.err.println("File not found: " + e.getMessage());
             System.exit(1);
         } catch (IOException e) {
-            System.err.println("Can't read file " + propsPath);
+            System.err.println("Can't read file " + PROPS_FILENAME);
             System.exit(2);
         }
         return props;
@@ -151,15 +153,6 @@ public abstract class BenchmarkBase {
         }
     }
 
-    public static boolean parseBooleanProp(Properties props, String propName) throws ValidationException {
-        String prop = ensureProp(props, propName);
-        try {
-            return Boolean.parseBoolean(prop);
-        } catch (NumberFormatException e) {
-            throw new ValidationException("Invalid property format, expected true or false: " + propName + "=" + prop);
-        }
-    }
-
     <T> StreamStage<Tuple2<Long, Long>> determineLatency(
             StreamStage<T> stage,
             ToLongFunctionEx<? super T> timestampFn
@@ -168,6 +161,10 @@ public abstract class BenchmarkBase {
         return stage.mapStateful(
                 () -> new DetermineLatency<>(timestampFn, latencyReportingThresholdLocal),
                 DetermineLatency::map);
+    }
+
+    static long getRandom(long seq, long range) {
+        return Math.abs(HashUtil.fastLongMix(seq)) % range;
     }
 
     static class DetermineLatency<T> {

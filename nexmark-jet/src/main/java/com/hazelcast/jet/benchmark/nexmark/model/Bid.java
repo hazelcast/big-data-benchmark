@@ -6,25 +6,14 @@ import com.hazelcast.nio.serialization.StreamSerializer;
 
 import java.io.IOException;
 
-public class Bid {
-    private final long seq;
-    private final long timestamp;
+public class Bid extends Event {
     private final long auctionId;
     private final long price;
 
-    public Bid(long seq, long timestamp, long auctionId, long price) {
-        this.seq = seq;
-        this.timestamp = timestamp;
+    public Bid(long id, long timestamp, long auctionId, long price) {
+        super(id, timestamp);
         this.auctionId = auctionId;
         this.price = price;
-    }
-
-    public long seq() {
-        return seq;
-    }
-
-    public long timestamp() {
-        return timestamp;
     }
 
     public long auctionId() {
@@ -44,7 +33,7 @@ public class Bid {
 
         @Override
         public void write(ObjectDataOutput out, Bid bid) throws IOException {
-            out.writeLong(bid.seq());
+            out.writeLong(bid.id());
             out.writeLong(bid.timestamp());
             out.writeLong(bid.auctionId());
             out.writeLong(bid.price());
@@ -52,11 +41,11 @@ public class Bid {
 
         @Override
         public Bid read(ObjectDataInput in) throws IOException {
-            long seq = in.readLong();
+            long id = in.readLong();
             long timestamp = in.readLong();
             long auctionId = in.readLong();
             long price = in.readLong();
-            return new Bid(seq, timestamp, auctionId, price);
+            return new Bid(id, timestamp, auctionId, price);
         }
     }
 }
