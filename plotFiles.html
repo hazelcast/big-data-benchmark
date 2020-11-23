@@ -78,9 +78,7 @@
             columns.push(i);
             columns.push({
                 type: 'string',
-                properties: {
-                    role: 'tooltip'
-                },
+                properties: { role: 'tooltip' },
                 calc: (function (j) {
                     return function (dt, row) {
                         var percentile = 100.0 - (100.0/dt.getValue(row, 0));
@@ -100,15 +98,12 @@
         while (names.length < histos.length) {
             names.push('Unknown');
         }
-
-        var series = [];
+        var allSeries = [];
         for (var i = 0; i < histos.length; i++) {
-            series = appendDataSeries(histos[i], names[i], series);
+            allSeries = appendDataSeries(histos[i], names[i], allSeries);
         }
-
-        chartData = google.visualization.arrayToDataTable(series);
+        chartData = google.visualization.arrayToDataTable(allSeries);
     }
-
 
     function drawInitialChart() {
         // Connect the choose files button:
@@ -124,57 +119,65 @@
         setChartData(names, histos);
         drawChart();
     }
-</script>
-<script type="text/javascript">
-    function appendDataSeries(histo, name, dataSeries) {
-        var series;
-        var seriesCount;
-        if (dataSeries.length == 0) {
-            series = [ ['X', name] ];
-            seriesCount = 1;
+
+    /*
+     * chartData format: [
+         [x_title, series_1_name, series_2_name, ...],
+         [x1, y1_series1, y1_series2, ...]
+         [x2, y2_series1, y2_series2, ...]
+      ]
+     */
+    function appendDataSeries(histo, name, chartData) {
+        if (chartData.length == 0) {
+            chartData = [ ['X', name] ];
         } else {
-            series = dataSeries;
-            series[0].push(name);
-            seriesCount = series[0].length - 1;
+            chartData[0].push(name);
         }
-
-        var lines = histo.split("\n");
-
-        var seriesIndex = 1;
+        let seriesCount = chartData[0].length - 1;
+        let lines = histo.split("\n");
+        var xIndex = 1;
+        var lastY = null;
         for (var i = 0; i < lines.length; i++) {
-            var line = lines[i].trim();
-            var values = line.trim().split(/[ ]+/);
+            // Figure out x and y
+            let line = lines[i].trim();
+            if (line[0] == '#') {
+                continue;
+            }
+            let values = line.split(/[ ]+/);
+            if (values.length != 4) {
+                continue;
+            }
+            let x = parseFloat(values[3]);
+            let y = parseFloat(values[0]);
+            if (isNaN(x) || isNaN(y)) {
+                continue;
+            }
+            // end Figure out x and y
 
-            if (line[0] != '#' && values.length == 4) {
-
-                var y = parseFloat(values[0]);
-                var x = parseFloat(values[3]);
-
-                if (!isNaN(x) && !isNaN(y)) {
-
-                    if (seriesIndex >= series.length) {
-                        series.push([x]);
-                    }
-
-                    while (series[seriesIndex].length < seriesCount) {
-                        series[seriesIndex].push(null);
-                    }
-
-                    series[seriesIndex].push(y);
-                    seriesIndex++;
+            lastY = y;
+            if (xIndex >= chartData.length) {
+                chartData.push([x]);
+            }
+            let dataForX = chartData[xIndex];
+            while (dataForX.length < seriesCount) {
+                if (xIndex == 1) {
+                    dataForX.push(null);
+                } else {
+                    let dataForPrevX = chartData[xIndex - 1];
+                    let yIndex = dataForX.length;
+                    dataForX.push(dataForPrevX[yIndex]);
                 }
             }
+            dataForX.push(y);
+            xIndex++;
         }
-
-        while (seriesIndex < series.length) {
-            series[seriesIndex].push(null);
-            seriesIndex++;
+        while (xIndex < chartData.length) {
+            chartData[xIndex].push(lastY);
+            xIndex++;
         }
-
-        return series;
+        return chartData;
     }
-</script>
-<script>
+
     function timeUnitsSelected(evt) {
         drawChart();
     }
@@ -182,9 +185,7 @@
     function doExport(event) {
         saveSvgAsPng(document.querySelector('svg'), 'Histogram', 2.0);
     }
-</script>
 
-<script>
     function handleFileSelect(evt) {
         var files = evt.target.files; // FileList object
         var fileDisplayArea = document.getElementById('fileDisplayArea');
@@ -215,9 +216,6 @@
 
     }
 
-</script>
-
-<script type="text/javascript">
     (function() {
         var out$ = typeof exports != 'undefined' && exports || this;
 
