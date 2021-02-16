@@ -48,7 +48,7 @@
         var unitText = unitSelection.options[unitSelIndex].innerHTML;
 
         var options = {
-            title: 'Nexmark Query',
+            title: 'Exactly-Once Guarantee',
             height: 600,
             width: 900,
             backgroundColor: { fill: "#fffdfa" },
@@ -64,7 +64,7 @@
                 viewWindowMode: 'explicit',
                 viewWindow: { min:1, max:maxPercentile }
             },
-            vAxis: {title: 'Latency (' + unitText + ')', minValue: 0 },
+            vAxis: {title: 'Latency (' + unitText + ')', minValue: 0, maxValue: 14 },
             legend: {position: 'bottom'}
         };
 
@@ -121,13 +121,14 @@
     }
 
     /*
-     * chartData format: [
+       chartData format: [
          [x_title, series_1_name, series_2_name, ...],
          [x1, y1_series1, y1_series2, ...]
          [x2, y2_series1, y2_series2, ...]
       ]
      */
     function appendDataSeries(histo, name, chartData) {
+        name = name.substring(0, name.lastIndexOf('.'));
         if (chartData.length == 0) {
             chartData = [ ['X', name] ];
         } else {
@@ -158,6 +159,9 @@
             if (xIndex >= chartData.length) {
                 chartData.push([x]);
             }
+
+            // Fill in missing data points at current X for previous series.
+            // This happens when the current series is the longest so far.
             let dataForX = chartData[xIndex];
             while (dataForX.length < seriesCount) {
                 if (xIndex == 1) {
@@ -171,6 +175,8 @@
             dataForX.push(y);
             xIndex++;
         }
+        // If the current series is not the longest one, fill in the
+        // missing high-end data points.
         while (xIndex < chartData.length) {
             chartData[xIndex].push(lastY);
             xIndex++;
@@ -187,12 +193,12 @@
     }
 
     function handleFileSelect(evt) {
-        var files = evt.target.files; // FileList object
-        var fileDisplayArea = document.getElementById('fileDisplayArea');
+        let files = [...evt.target.files].sort();
+        let fileDisplayArea = document.getElementById('fileDisplayArea');
 
-        var names = [];
-        var histos = [];
-        var fileCount = 0;
+        let names = [];
+        let histos = [];
+        let fileCount = 0;
 
         fileDisplayArea.innerText = "file selected...\n";
 

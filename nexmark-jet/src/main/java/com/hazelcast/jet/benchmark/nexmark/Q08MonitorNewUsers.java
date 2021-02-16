@@ -10,6 +10,7 @@ import com.hazelcast.jet.pipeline.StreamStage;
 import java.util.Properties;
 
 import static com.hazelcast.jet.aggregate.AggregateOperations.counting;
+import static com.hazelcast.jet.aggregate.AggregateOperations.pickAny;
 import static com.hazelcast.jet.benchmark.nexmark.EventSourceP.eventSource;
 import static com.hazelcast.jet.pipeline.WindowDefinition.sliding;
 
@@ -23,16 +24,17 @@ public class Q08MonitorNewUsers extends BenchmarkBase {
         int numDistinctKeys = parseIntProp(props, PROP_NUM_DISTINCT_KEYS);
         int windowSize = parseIntProp(props, PROP_WINDOW_SIZE_MILLIS);
         long slideBy = parseIntProp(props, PROP_SLIDING_STEP_MILLIS);
+        int sievingFactor = numDistinctKeys / 100;
 
         StreamStage<Person> persons = pipeline
-                .readFrom(eventSource(eventsPerSecond, INITIAL_SOURCE_DELAY_MILLIS, (seq, timestamp) -> {
+                .readFrom(eventSource(eventsPerSecond / 2, INITIAL_SOURCE_DELAY_MILLIS, (seq, timestamp) -> {
                     long id = getRandom(seq, numDistinctKeys);
-                    return new Person(id, timestamp, String.format("Person #%07d", id), null);
+                    return new Person(id, timestamp, "Seller #" + id, null);
                 }))
                 .withNativeTimestamps(0);
 
         StreamStage<Auction> auctions = pipeline
-                .readFrom(eventSource(eventsPerSecond, INITIAL_SOURCE_DELAY_MILLIS, (seq, timestamp) -> {
+                .readFrom(eventSource(eventsPerSecond / 2, INITIAL_SOURCE_DELAY_MILLIS, (seq, timestamp) -> {
                     long sellerId = getRandom(137 * seq, numDistinctKeys);
                     return new Auction(0, timestamp, sellerId, 0);
                 }))
@@ -41,10 +43,10 @@ public class Q08MonitorNewUsers extends BenchmarkBase {
         return persons
                 .window(sliding(windowSize, slideBy))
                 .groupingKey(Person::id)
-                .aggregate2(counting(), auctions.groupingKey(Auction::sellerId), counting())
-                .filter(kwr -> kwr.result().f0() > 0 && kwr.result().f1() > 0)
+                .aggregate2(pickAny(), auctions.groupingKey(Auction::sellerId), counting())
+                .filter(kwr -> kwr.result().f0() != null && kwr.result().f1() > 0)
 
+                .filter(kwr -> kwr.key() % sievingFactor == 0)
                 .apply(stage -> determineLatency(stage, WindowResult::end));
     }
-
 }

@@ -1,10 +1,13 @@
 package com.hazelcast.jet.benchmark.nexmark;
 
-import com.hazelcast.function.ToLongFunctionEx;
+import com.hazelcast.function.FunctionEx;
 import com.hazelcast.internal.util.HashUtil;
 import com.hazelcast.jet.Jet;
+import com.hazelcast.jet.accumulator.LongLongAccumulator;
 import com.hazelcast.jet.benchmark.nexmark.model.Bid;
+import com.hazelcast.jet.benchmark.nexmark.model.Person;
 import com.hazelcast.jet.config.JobConfig;
+import com.hazelcast.jet.config.ProcessingGuarantee;
 import com.hazelcast.jet.datamodel.Tuple2;
 import com.hazelcast.jet.pipeline.Pipeline;
 import com.hazelcast.jet.pipeline.Sinks;
@@ -19,10 +22,10 @@ import java.io.IOException;
 import java.io.PrintStream;
 import java.io.Serializable;
 import java.util.Properties;
-import java.util.function.ToLongFunction;
 
 import static com.hazelcast.jet.benchmark.nexmark.EventSourceP.simpleTime;
 import static com.hazelcast.jet.datamodel.Tuple2.tuple2;
+import static java.lang.Integer.parseInt;
 import static java.util.concurrent.TimeUnit.SECONDS;
 
 public abstract class BenchmarkBase {
@@ -31,6 +34,8 @@ public abstract class BenchmarkBase {
     public static final String PROP_NUM_DISTINCT_KEYS = "num-distinct-keys";
     public static final String PROP_WINDOW_SIZE_MILLIS = "window-size-millis";
     public static final String PROP_SLIDING_STEP_MILLIS = "sliding-step-millis";
+    public static final String PROP_PROCESSING_GUARANTEE = "processing-guarantee";
+    public static final String PROP_SNAPSHOT_INTERVAL_MILLIS = "snapshot-interval-millis";
     public static final String PROP_WARMUP_SECONDS = "warmup-seconds";
     public static final String PROP_MEASUREMENT_SECONDS = "measurement-seconds";
     public static final String PROP_LATENCY_REPORTING_THRESHOLD_MILLIS = "latency-reporting-threshold-millis";
@@ -44,19 +49,21 @@ public abstract class BenchmarkBase {
 
     private final String benchmarkName;
     private int latencyReportingThresholdMs;
+    private int jobSeq;
 
     BenchmarkBase() {
         this.benchmarkName = getClass().getSimpleName();
     }
 
     public static void main(String[] args) throws Exception {
-        if (args.length != 1) {
+        if (args.length != 2) {
             System.out.println("Supply one argument: the simple class name of a benchmark");
             return;
         }
         String pkgName = BenchmarkBase.class.getPackage().getName();
         BenchmarkBase benchmark = (BenchmarkBase)
                 Class.forName(pkgName + '.' + args[0]).newInstance();
+        benchmark.jobSeq = parseInt(args[1]);
         benchmark.run();
     }
 
@@ -64,14 +71,18 @@ public abstract class BenchmarkBase {
     void run() {
         Properties props = loadProps();
         var jobCfg = new JobConfig();
-        jobCfg.setName(benchmarkName);
+        jobCfg.setName(benchmarkName + "_" + jobSeq);
         jobCfg.registerSerializer(Bid.class, Bid.BidSerializer.class);
+        jobCfg.registerSerializer(Person.class, Person.PersonSerializer.class);
         var jet = Jet.bootstrappedInstance();
         try {
             int eventsPerSecond = parseIntProp(props, PROP_EVENTS_PER_SECOND);
             int numDistinctKeys = parseIntProp(props, PROP_NUM_DISTINCT_KEYS);
             int windowSize = parseIntProp(props, PROP_WINDOW_SIZE_MILLIS);
             long slideBy = parseIntProp(props, PROP_SLIDING_STEP_MILLIS);
+            String pgString = ensureProp(props, PROP_PROCESSING_GUARANTEE);
+            ProcessingGuarantee guarantee = ProcessingGuarantee.valueOf(pgString.toUpperCase().replace('-', '_'));
+            int snapshotInterval = parseIntProp(props, PROP_SNAPSHOT_INTERVAL_MILLIS);
             int warmupSeconds = parseIntProp(props, PROP_WARMUP_SECONDS);
             int measurementSeconds = parseIntProp(props, PROP_MEASUREMENT_SECONDS);
             latencyReportingThresholdMs = parseIntProp(props, PROP_LATENCY_REPORTING_THRESHOLD_MILLIS);
@@ -82,6 +93,8 @@ public abstract class BenchmarkBase {
                     "Distinct keys                %,d%n" +
                     "Window size                  %,d ms%n" +
                     "Sliding step                 %,d ms%n" +
+                    "Processing guarantee         %s%n" +
+                    "Snapshot interval            %,d ms%n" +
                     "Warmup period                %,d s%n" +
                     "Measurement period           %,d s%n" +
                     "Latency reporting threshold  %,d ms%n" +
@@ -91,6 +104,8 @@ public abstract class BenchmarkBase {
                     numDistinctKeys,
                     windowSize,
                     slideBy,
+                    guarantee,
+                    snapshotInterval,
                     warmupSeconds,
                     measurementSeconds,
                     latencyReportingThresholdMs,
@@ -110,6 +125,8 @@ public abstract class BenchmarkBase {
                             RecordLatencyHistogram::map)
                     .writeTo(Sinks.files(new File(outputPath, "histogram").getPath()));
 
+            jobCfg.setProcessingGuarantee(guarantee);
+            jobCfg.setSnapshotIntervalMillis(snapshotInterval);
             var job = jet.newJob(pipeline, jobCfg);
             Runtime.getRuntime().addShutdownHook(new Thread(job::cancel));
             job.join();
@@ -147,61 +164,49 @@ public abstract class BenchmarkBase {
     public static int parseIntProp(Properties props, String propName) throws ValidationException {
         String prop = ensureProp(props, propName);
         try {
-            return Integer.parseInt(prop.replace("_", ""));
+            return parseInt(prop.replace("_", ""));
         } catch (NumberFormatException e) {
-            throw new ValidationException("Invalid property format, correct example is 9_999: " + propName + "=" + prop);
+            throw new ValidationException(
+                    "Invalid property format, correct example is 9_999: " + propName + "=" + prop);
         }
-    }
-
-    <T> StreamStage<Tuple2<Long, Long>> determineLatency(
-            StreamStage<T> stage,
-            ToLongFunctionEx<? super T> timestampFn
-    ) {
-        int latencyReportingThresholdLocal = this.latencyReportingThresholdMs;
-        return stage.mapStateful(
-                () -> new DetermineLatency<>(timestampFn, latencyReportingThresholdLocal),
-                DetermineLatency::map);
     }
 
     static long getRandom(long seq, long range) {
         return Math.abs(HashUtil.fastLongMix(seq)) % range;
     }
 
-    static class DetermineLatency<T> {
-        private final ToLongFunction<? super T> timestampFn;
-        private final long latencyReportingThreshold;
+    <T> StreamStage<Tuple2<Long, Long>> determineLatency(
+            StreamStage<T> stage,
+            FunctionEx<? super T, ? extends Long> timestampFn
+    ) {
+        int latencyReportingThresholdLocal = this.latencyReportingThresholdMs;
+        return stage
+                .map(timestampFn)
+                .mapStateful(LongLongAccumulator::new, // (startTimestamp, lastTimestamp)
+            (state, timestamp) -> {
+                long lastTimestamp = state.get2();
+                if (timestamp <= lastTimestamp) {
+                    return null;
+                }
+                if (lastTimestamp == 0) {
+                    state.set1(timestamp); // state.startTimestamp = timestamp;
+                }
+                long startTimestamp = state.get1();
+                state.set2(timestamp); // state.lastTimestamp = timestamp;
 
-        private long startTimestamp;
-        private long lastTimestamp;
-
-        DetermineLatency(ToLongFunction<? super T> timestampFn, long latencyReportingThreshold) {
-            this.timestampFn = timestampFn;
-            this.latencyReportingThreshold = latencyReportingThreshold;
-        }
-
-        Tuple2<Long, Long> map(T t) {
-            long timestamp = timestampFn.applyAsLong(t);
-            if (timestamp <= lastTimestamp) {
-                return null;
-            }
-            if (lastTimestamp == 0) {
-                startTimestamp = timestamp;
-            }
-            lastTimestamp = timestamp;
-
-            long latency = System.currentTimeMillis() - timestamp;
-            if (latency == -1) { // very low latencies may be reported as negative due to clock skew
-                latency = 0;
-            }
-            if (latency < 0) {
-                throw new RuntimeException("Negative latency: " + latency);
-            }
-            long time = simpleTime(timestamp);
-            if (latency >= latencyReportingThreshold) {
-                System.out.format("time %,d: latency %,d ms%n", time, latency);
-            }
-            return tuple2(timestamp - startTimestamp, latency);
-        }
+                long latency = System.currentTimeMillis() - timestamp;
+                if (latency == -1) { // very low latencies may be reported as negative due to clock skew
+                    latency = 0;
+                }
+                if (latency < 0) {
+                    throw new RuntimeException("Negative latency: " + latency);
+                }
+                long time = simpleTime(timestamp);
+                if (latency >= (long) latencyReportingThresholdLocal) {
+                    System.out.format("time %,d: latency %,d ms%n", time, latency);
+                }
+                return tuple2(timestamp - startTimestamp, latency);
+            });
     }
 
     private static class RecordLatencyHistogram implements Serializable {

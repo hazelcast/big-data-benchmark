@@ -132,8 +132,8 @@ public class JetTradeMonitor {
 
             JobConfig jobCfg = new JobConfig();
             jobCfg.setName("Trade Monitor Benchmark");
-            jobCfg.setSnapshotIntervalMillis(snapshotInterval);
             jobCfg.setProcessingGuarantee(guarantee);
+            jobCfg.setSnapshotIntervalMillis(snapshotInterval);
             jobCfg.registerSerializer(Trade.class, TradeStreamSerializer.class);
 
             JetInstance jet = Jet.bootstrappedInstance();
