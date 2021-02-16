@@ -23,10 +23,6 @@ public class Q03Join extends BenchmarkBase {
             "IN", "IA", "KS", "KY", "LA", "ME", "MD", "MA", "MI", "MN", "MS", "MO", "MT", "NE", "NV", "NH", "NJ", "NM", "NY",
             "NC", "ND", "OH", "OK", "OR", "PA", "RI", "SC", "SD", "TN", "TX", "UT", "VT", "VA", "WA", "WV", "WI", "WY"};
 
-    Q03Join() {
-        super("q03-join");
-    }
-
     @Override
     StreamStage<Tuple2<Long, Long>> addComputation(
             Pipeline pipeline, Properties props
@@ -48,7 +44,7 @@ public class Q03Join extends BenchmarkBase {
         StreamStage<Object> auctions = pipeline
                 .readFrom(EventSourceP.eventSource(eventsPerSecond, INITIAL_SOURCE_DELAY_MILLIS, (seq, timestamp) -> {
                     long sellerId = getRandom(137 * seq, numDistinctKeys);
-                    return new Auction(0, timestamp, sellerId, 0);
+                    return new Auction(seq, timestamp, sellerId, 0);
                 }))
                 .withNativeTimestamps(0)
                 .filter(a -> a.category() == 10)

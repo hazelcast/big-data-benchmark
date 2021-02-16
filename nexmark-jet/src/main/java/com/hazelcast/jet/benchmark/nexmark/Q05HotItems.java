@@ -18,10 +18,6 @@ import static com.hazelcast.jet.pipeline.WindowDefinition.tumbling;
 
 public class Q05HotItems extends BenchmarkBase {
 
-    Q05HotItems() {
-        super("q05-hot-items");
-    }
-
     @Override
     StreamStage<Tuple2<Long, Long>> addComputation(
             Pipeline pipeline, Properties props

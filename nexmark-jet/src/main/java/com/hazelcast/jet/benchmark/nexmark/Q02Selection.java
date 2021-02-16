@@ -13,10 +13,6 @@ import static com.hazelcast.jet.datamodel.Tuple3.tuple3;
 
 public class Q02Selection extends BenchmarkBase {
 
-    Q02Selection() {
-        super("q02-selection");
-    }
-
     @Override
     StreamStage<Tuple2<Long, Long>> addComputation(
             Pipeline pipeline, Properties props

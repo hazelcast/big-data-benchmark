@@ -15,10 +15,6 @@ import static com.hazelcast.jet.pipeline.WindowDefinition.sliding;
 
 public class Q08MonitorNewUsers extends BenchmarkBase {
 
-    Q08MonitorNewUsers() {
-        super("q08-monitor-new-users");
-    }
-
     @Override
     StreamStage<Tuple2<Long, Long>> addComputation(
             Pipeline pipeline, Properties props

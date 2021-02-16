@@ -45,8 +45,8 @@ public abstract class BenchmarkBase {
     private final String benchmarkName;
     private int latencyReportingThresholdMs;
 
-    BenchmarkBase(String benchmarkName) {
-        this.benchmarkName = benchmarkName;
+    BenchmarkBase() {
+        this.benchmarkName = getClass().getSimpleName();
     }
 
     public static void main(String[] args) throws Exception {

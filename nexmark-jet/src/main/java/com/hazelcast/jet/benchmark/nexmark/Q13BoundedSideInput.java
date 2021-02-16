@@ -19,10 +19,6 @@ import static java.util.stream.Collectors.toList;
 
 public class Q13BoundedSideInput extends BenchmarkBase {
 
-    Q13BoundedSideInput() {
-        super("q13-bounded-side-input");
-    }
-
     @Override
     StreamStage<Tuple2<Long, Long>> addComputation(
             Pipeline pipeline, Properties props

@@ -1,21 +1,15 @@
 package com.hazelcast.jet.benchmark.nexmark;
 
-import com.hazelcast.internal.util.HashUtil;
 import com.hazelcast.jet.benchmark.nexmark.model.Bid;
 import com.hazelcast.jet.datamodel.Tuple2;
 import com.hazelcast.jet.pipeline.Pipeline;
 import com.hazelcast.jet.pipeline.StreamStage;
 
 import java.util.Properties;
-import java.util.concurrent.ThreadLocalRandom;
 
 import static com.hazelcast.jet.benchmark.nexmark.EventSourceP.eventSource;
 
 public class Q01CurrencyConversion extends BenchmarkBase {
-
-    Q01CurrencyConversion() {
-        super("q01-currency-conversion");
-    }
 
     @Override
     StreamStage<Tuple2<Long, Long>> addComputation(Pipeline pipeline, Properties props) throws ValidationException {
