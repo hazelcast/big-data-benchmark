@@ -35,6 +35,7 @@ public class Q08MonitorNewUsers extends BenchmarkBase {
 
         StreamStage<Auction> auctions = pipeline
                 .readFrom(eventSource(eventsPerSecond / 2, INITIAL_SOURCE_DELAY_MILLIS, (seq, timestamp) -> {
+                    // factor 137 removes the correlation between these IDs and those in the Person stream
                     long sellerId = getRandom(137 * seq, numDistinctKeys);
                     return new Auction(0, timestamp, sellerId, 0, 0);
                 }))
