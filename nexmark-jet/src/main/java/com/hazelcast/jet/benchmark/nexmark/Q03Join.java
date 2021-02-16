@@ -10,10 +10,7 @@ import com.hazelcast.jet.pipeline.StreamStage;
 
 import java.io.Serializable;
 import java.util.ArrayList;
-import java.util.Collections;
-import java.util.HashMap;
 import java.util.List;
-import java.util.Map;
 import java.util.Properties;
 
 import static com.hazelcast.jet.Traversers.singleton;
@@ -67,22 +64,19 @@ public class Q03Join extends BenchmarkBase {
     }
 
     private static final class JoinBuffer implements Serializable {
-        // persons by personId
-        final Map<Long, Person> persons = new HashMap<>();
+        Person person;
         // auctions by sellerId
-        final Map<Long, List<Auction>> auctions = new HashMap<>();
+        final List<Auction> auctions = new ArrayList<>();
 
         public Traverser<Tuple5<String, String, Long, Long, Integer>> doJoin(Long key, Object o) {
             if (o instanceof Person) {
                 Person person = (Person) o;
-                persons.put(key, person);
-                return traverseIterable(auctions.getOrDefault(key, Collections.emptyList()))
+                this.person = person;
+                return traverseIterable(auctions)
                         .map(auction -> tuple5(person.name(), person.state(), auction.timestamp(), auction.id(), auction.category()));
             } else {
                 Auction auction = (Auction) o;
-                auctions.computeIfAbsent(key, x -> new ArrayList<>())
-                        .add(auction);
-                Person person = persons.get(key);
+                auctions.add(auction);
                 return singleton(tuple5(person.name(), person.state(), auction.timestamp(), auction.id(), auction.category()));
             }
         }
