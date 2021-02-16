@@ -18,7 +18,6 @@ package com.hazelcast.jet.benchmark.nexmark;
 
 import com.hazelcast.jet.benchmark.nexmark.model.Bid;
 import com.hazelcast.jet.datamodel.Tuple2;
-import com.hazelcast.jet.datamodel.Tuple3;
 import com.hazelcast.jet.pipeline.Pipeline;
 import com.hazelcast.jet.pipeline.StreamStage;
 
@@ -35,14 +34,11 @@ public class Q07HighestBid extends BenchmarkBase {
     StreamStage<Tuple2<Long, Long>> addComputation(
             Pipeline pipeline, Properties props
     ) throws ValidationException {
-        int numDistinctKeys = parseIntProp(props, PROP_NUM_DISTINCT_KEYS);
         int auctionIdModulus = 128;
         int eventsPerSecond = parseIntProp(props, PROP_EVENTS_PER_SECOND);
         int sievingFactor = Math.max(1, eventsPerSecond / (8192 * auctionIdModulus));
-        int auctionBidRatio = 10;
-        long auctionMaxDuration = 1024;
 
-        pipeline
+        return pipeline
                 .readFrom(EventSourceP.eventSource(eventsPerSecond, INITIAL_SOURCE_DELAY_MILLIS,
                         (seq, timestamp) -> new Bid(seq, timestamp, seq, 0)))
                 .withNativeTimestamps(0)

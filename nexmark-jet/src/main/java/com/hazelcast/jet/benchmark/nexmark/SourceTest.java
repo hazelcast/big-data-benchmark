@@ -18,10 +18,6 @@ import static com.hazelcast.jet.pipeline.WindowDefinition.sliding;
  */
 public class SourceTest extends BenchmarkBase {
 
-    SourceTest() {
-        super("source-test");
-    }
-
     @Override
     StreamStage<Tuple2<Long, Long>> addComputation(
             Pipeline pipeline, Properties props
