@@ -47,31 +47,27 @@ public abstract class BenchmarkBase {
     static final String BENCHMARK_DONE_MESSAGE = "benchmarking is done";
     static final long INITIAL_SOURCE_DELAY_MILLIS = 10;
 
-    private final String benchmarkName;
     private int latencyReportingThresholdMs;
-    private int jobSeq;
 
     BenchmarkBase() {
-        this.benchmarkName = getClass().getSimpleName();
     }
 
     public static void main(String[] args) throws Exception {
-        if (args.length != 2) {
+        if (args.length != 1) {
             System.out.println("Supply one argument: the simple class name of a benchmark");
             return;
         }
         String pkgName = BenchmarkBase.class.getPackage().getName();
         BenchmarkBase benchmark = (BenchmarkBase)
                 Class.forName(pkgName + '.' + args[0]).newInstance();
-        benchmark.jobSeq = parseInt(args[1]);
         benchmark.run();
     }
 
-    @SuppressWarnings("ConstantConditions")
     void run() {
+        String benchmarkName = getClass().getSimpleName();
         Properties props = loadProps();
         var jobCfg = new JobConfig();
-        jobCfg.setName(benchmarkName + "_" + jobSeq);
+        jobCfg.setName(benchmarkName);
         jobCfg.registerSerializer(Bid.class, Bid.BidSerializer.class);
         jobCfg.registerSerializer(Person.class, Person.PersonSerializer.class);
         var jet = Jet.bootstrappedInstance();
