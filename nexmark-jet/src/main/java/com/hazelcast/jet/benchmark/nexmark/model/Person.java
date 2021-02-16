@@ -32,11 +32,11 @@ public class Person extends Event {
         }
 
         @Override
-        public void write(ObjectDataOutput out, Person Person) throws IOException {
-            out.writeLong(Person.id());
-            out.writeLong(Person.timestamp());
-            out.writeUTF(Person.name());
-            out.writeUTF(Person.state());
+        public void write(ObjectDataOutput out, Person person) throws IOException {
+            out.writeLong(person.id());
+            out.writeLong(person.timestamp());
+            out.writeUTF(person.name());
+            out.writeUTF(person.state());
         }
 
         @Override
