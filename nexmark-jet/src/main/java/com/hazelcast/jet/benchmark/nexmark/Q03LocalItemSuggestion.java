@@ -46,7 +46,7 @@ public class Q03LocalItemSuggestion extends BenchmarkBase {
         StreamStage<Object> auctions = pipeline
                 .readFrom(EventSourceP.eventSource(eventsPerSecond, INITIAL_SOURCE_DELAY_MILLIS, (seq, timestamp) -> {
                     long sellerId = getRandom(137 * seq, numDistinctKeys);
-                    return new Auction(seq, timestamp, sellerId, 0);
+                    return new Auction(seq, timestamp, sellerId, 0, 0);
                 }))
                 .withNativeTimestamps(0)
                 .filter(a -> a.category() == 10)

@@ -36,7 +36,7 @@ public class Q08MonitorNewUsers extends BenchmarkBase {
         StreamStage<Auction> auctions = pipeline
                 .readFrom(eventSource(eventsPerSecond / 2, INITIAL_SOURCE_DELAY_MILLIS, (seq, timestamp) -> {
                     long sellerId = getRandom(137 * seq, numDistinctKeys);
-                    return new Auction(0, timestamp, sellerId, 0);
+                    return new Auction(0, timestamp, sellerId, 0, 0);
                 }))
                 .withNativeTimestamps(0);
 
