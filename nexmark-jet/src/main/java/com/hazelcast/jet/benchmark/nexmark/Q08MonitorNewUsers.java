@@ -31,14 +31,14 @@ public class Q08MonitorNewUsers extends BenchmarkBase {
         StreamStage<Person> persons = pipeline
                 .readFrom(eventSource(eventsPerSecond, INITIAL_SOURCE_DELAY_MILLIS, (seq, timestamp) -> {
                     long id = getRandom(seq, numDistinctKeys);
-                    return new Person(id, timestamp, String.format("Person #%07d", id));
+                    return new Person(id, timestamp, String.format("Person #%07d", id), null);
                 }))
                 .withNativeTimestamps(0);
 
         StreamStage<Auction> auctions = pipeline
                 .readFrom(eventSource(eventsPerSecond, INITIAL_SOURCE_DELAY_MILLIS, (seq, timestamp) -> {
                     long sellerId = getRandom(137 * seq, numDistinctKeys);
-                    return new Auction(0, timestamp, sellerId);
+                    return new Auction(0, timestamp, sellerId, 0);
                 }))
                 .withNativeTimestamps(0);
 
