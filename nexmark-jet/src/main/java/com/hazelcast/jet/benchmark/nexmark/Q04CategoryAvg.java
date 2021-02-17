@@ -1,17 +1,27 @@
 package com.hazelcast.jet.benchmark.nexmark;
 
+import com.hazelcast.jet.Traverser;
+import com.hazelcast.jet.Traversers;
 import com.hazelcast.jet.benchmark.nexmark.model.Auction;
 import com.hazelcast.jet.benchmark.nexmark.model.Bid;
+import com.hazelcast.jet.core.AbstractProcessor;
+import com.hazelcast.jet.core.Watermark;
 import com.hazelcast.jet.datamodel.Tuple2;
 import com.hazelcast.jet.datamodel.Tuple3;
 import com.hazelcast.jet.pipeline.Pipeline;
 import com.hazelcast.jet.pipeline.StreamStage;
 
-import java.io.Serializable;
+import java.util.ArrayList;
+import java.util.Collection;
+import java.util.HashMap;
+import java.util.List;
+import java.util.Map;
 import java.util.Map.Entry;
 import java.util.Properties;
+import java.util.TreeMap;
 
 import static com.hazelcast.function.ComparatorEx.comparing;
+import static com.hazelcast.jet.Traversers.traverseIterable;
 import static com.hazelcast.jet.aggregate.AggregateOperations.maxBy;
 import static com.hazelcast.jet.datamodel.Tuple3.tuple3;
 
@@ -51,12 +61,8 @@ public class Q04CategoryAvg extends BenchmarkBase {
         return auctions
                 .merge(bids)
                 .groupingKey(o -> o instanceof Bid ? ((Bid) o).auctionId() : ((Auction) o).id())
-                .mapStateful(
-                        auctionMaxDuration,
-                        AggrBuffer::new,
-                        AggrBuffer::process,
-                        (buf, key, result) -> null)
-                .groupingKey(Tuple3::f0) // Tuple 3 is: category, maxPrice, timestamp
+                .<Tuple3<Integer, Long, Long>>customTransform("findClosedAuctions", () -> new ClosedAuctionP(auctionMaxDuration))
+                .groupingKey(Tuple3::f0) // Tuple 3 is: category, maxPrice, closeTimestamp
                 .rollingAggregate(maxBy(comparing(Tuple3::f1)))
                 .map(Entry::getValue)
 
@@ -64,26 +70,71 @@ public class Q04CategoryAvg extends BenchmarkBase {
                 .apply(stage -> determineLatency(stage, Tuple3::f2));
     }
 
-    private static final class AggrBuffer implements Serializable {
+    /**
+     * A processor that ingests a merged stream of {@link Auction} and {@link
+     * Bid} items. It tracks the bids and emits the winning bid when the
+     * auction expires.
+     */
+    private static final class ClosedAuctionP extends AbstractProcessor {
 
-        private Auction auction;
-        private long maxPrice = Long.MIN_VALUE;
+        private final long auctionMaxDuration;
 
-        public Tuple3<Integer, Long, Long> process(Long key, Object item) {
+        /**
+         * Key: expiry time
+         * Value: auctions that expire at that time
+         */
+        private final TreeMap<Long, List<Auction>> auctionsByExpiry = new TreeMap<>();
+
+        /**
+         * Maximum bids for auctions. We track bids received before the auction is
+         * received, we also track bids with timestamp after the auction expiry -
+         * those need to be cleaned up regularly.
+         *
+         * Key: auction ID
+         * Value: maximum bid
+         */
+        private final Map<Long, Bid> bids = new HashMap<>();
+
+        private Traverser<Tuple3<Integer, Long, Long>> outputTraverser;
+        private long nextCleanUpTime;
+
+        public ClosedAuctionP(long auctionMaxDuration) {
+            this.auctionMaxDuration = auctionMaxDuration;
+        }
+
+        @Override
+        protected boolean tryProcess0(Object item) {
             if (item instanceof Auction) {
-                auction = (Auction) item;
-                if (maxPrice > Long.MIN_VALUE) {
-                    return tuple3(auction.category(), maxPrice, auction.timestamp());
-                }
+                Auction auction = (Auction) item;
+                auctionsByExpiry
+                        .computeIfAbsent(auction.expires(), x -> new ArrayList<>())
+                        .add(auction);
             } else {
                 Bid bid = (Bid) item;
-                if (auction != null && bid.timestamp() < auction.expires() && bid.price() > maxPrice) {
-                    maxPrice = bid.price();
+                bids.merge(bid.auctionId(), bid, (bid1, bid2) -> bid1.price() > bid2.price() ? bid1 : bid2);
+            }
+            return true;
+        }
 
-                    return tuple3(auction.category(), maxPrice, bid.timestamp());
+        @Override
+        public boolean tryProcessWatermark(Watermark watermark) {
+            if (outputTraverser == null) {
+                Collection<List<Auction>> expiredAuctions = auctionsByExpiry.headMap(watermark.timestamp()).values();
+                outputTraverser = traverseIterable(expiredAuctions)
+                        .flatMap(Traversers::traverseIterable)
+                        .map(auction -> {
+                            Bid bid = bids.remove(auction.id());
+                            return bid != null ? tuple3(auction.category(), bid.price(), watermark.timestamp()) : null;
+                        })
+                        .onFirstNull(() -> outputTraverser = null);
+
+                // clean up old bids received after the auction expired if sufficient time elapsed
+                if (nextCleanUpTime <= watermark.timestamp()) {
+                    nextCleanUpTime = watermark.timestamp() + auctionMaxDuration / 8;
+                    bids.values().removeIf(bid -> bid.timestamp() < watermark.timestamp() - auctionMaxDuration);
                 }
             }
-            return null;
+            return emitFromTraverser(outputTraverser);
         }
     }
 }
