@@ -69,12 +69,12 @@ public class Q03LocalItemSuggestion extends BenchmarkBase {
         return persons
                 .merge(auctions)
                 .groupingKey(o -> o instanceof Person ? ((Person) o).id() : ((Auction) o).sellerId())
-                .flatMapStateful(ttl, SellerAuctionJoin::new, SellerAuctionJoin::flatMap, (buf, key, wm) -> null)
+                .flatMapStateful(ttl, JoinAuctionToSeller::new, JoinAuctionToSeller::flatMap, (buf, key, wm) -> null)
 
                 .apply(stage -> determineLatency(stage, Tuple5::f2));
     }
 
-    private static final class SellerAuctionJoin implements Serializable {
+    private static final class JoinAuctionToSeller implements Serializable {
         Person person;
         final List<Auction> auctions = new ArrayList<>();
 

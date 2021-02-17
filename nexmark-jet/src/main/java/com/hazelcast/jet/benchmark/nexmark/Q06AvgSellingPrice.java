@@ -22,8 +22,10 @@ import com.hazelcast.jet.datamodel.Tuple2;
 import com.hazelcast.jet.pipeline.Pipeline;
 import com.hazelcast.jet.pipeline.StreamStage;
 
+import java.util.ArrayDeque;
 import java.util.Properties;
 
+import static com.hazelcast.jet.benchmark.nexmark.EventSourceP.eventSource;
 import static com.hazelcast.jet.benchmark.nexmark.JoinAuctionToWinningBidP.joinAuctionToWinningBid;
 import static com.hazelcast.jet.datamodel.Tuple2.tuple2;
 
@@ -34,21 +36,24 @@ public class Q06AvgSellingPrice extends BenchmarkBase {
             Pipeline pipeline, Properties props
     ) throws ValidationException {
         int numDistinctKeys = parseIntProp(props, PROP_NUM_DISTINCT_KEYS);
-        int auctionIdModulus = 128;
         int eventsPerSecond = parseIntProp(props, PROP_EVENTS_PER_SECOND);
-        int sievingFactor = Math.max(1, eventsPerSecond / (8192 * auctionIdModulus));
-        int auctionBidRatio = 10;
+        int sievingFactor = Math.max(1, eventsPerSecond / 8192);
+        int bidsPerAuction = 10;
         long auctionMaxDuration = 1024;
+        long auctionMinDuration = auctionMaxDuration / 2;
+        long maxBid = 1000;
         int windowItemCount = 10;
 
-        // We generate auctions at rate eventsPerSecond / auctionBidRatio.
-        // We generate bids at rate eventsPerSecond, each bid refers to auctionId = seq / auctionBidRatio
+        // We generate auctions at rate eventsPerSecond / bidsPerAuction.
+        // We generate bids at rate eventsPerSecond, each bid refers to
+        // auctionId = seq / bidsPerAuction
 
         StreamStage<Object> auctions = pipeline
-                .readFrom(EventSourceP.eventSource(eventsPerSecond / auctionBidRatio, INITIAL_SOURCE_DELAY_MILLIS,
+                .readFrom(eventSource(eventsPerSecond / bidsPerAuction, INITIAL_SOURCE_DELAY_MILLIS,
                         (seq, timestamp) -> {
                             long sellerId = getRandom(137 * seq, numDistinctKeys);
-                            long duration = getRandom(271 * seq, auctionMaxDuration);
+                            long duration = auctionMinDuration +
+                                    getRandom(271 * seq, auctionMaxDuration - auctionMinDuration);
                             int category = (int) getRandom(743 * seq, 128);
                             return new Auction(seq, timestamp, sellerId, category, timestamp + duration);
                         }))
@@ -56,8 +61,12 @@ public class Q06AvgSellingPrice extends BenchmarkBase {
                 .map(p -> p);
 
         StreamStage<Object> bids = pipeline
-                .readFrom(EventSourceP.eventSource(eventsPerSecond, INITIAL_SOURCE_DELAY_MILLIS,
-                        (seq, timestamp) -> new Bid(seq, timestamp, seq / auctionBidRatio, 0)))
+                .readFrom(eventSource(eventsPerSecond, INITIAL_SOURCE_DELAY_MILLIS,
+                        (seq, timestamp) -> {
+                            long price = getRandom(seq, maxBid);
+                            long auctionId = seq / bidsPerAuction;
+                            return new Bid(seq, timestamp, auctionId, price);
+                        }))
                 .withNativeTimestamps(0)
                 .map(p -> p);
 
@@ -65,46 +74,16 @@ public class Q06AvgSellingPrice extends BenchmarkBase {
                 .merge(bids)
                 .apply(joinAuctionToWinningBid(auctionMaxDuration))
                 .groupingKey(t -> t.f0().sellerId())
-                .mapStateful(() -> new LongRingBuffer(windowItemCount),
-                        (ctx, key, item) -> {
-                            ctx.add(item.f1().price());
-                            return tuple2(ctx.avg(), item.f0().expires());
+                .mapStateful(() -> new ArrayDeque<Long>(windowItemCount),
+                        (deque, key, item) -> {
+                            if (deque.size() == windowItemCount) {
+                                deque.removeFirst();
+                            }
+                            deque.addLast(item.f1().price());
+                            return tuple2(deque.stream().mapToLong(i -> i).average(), item.f0().expires());
                         })
 
                 .filter(t -> t.f1() % sievingFactor == 0)
                 .apply(stage -> determineLatency(stage, Tuple2::f1));
-    }
-
-    private static final class LongRingBuffer {
-        private final long[] data;
-        private int ptr;
-        private int size;
-
-        LongRingBuffer(int capacity) {
-            data = new long[capacity];
-        }
-
-        public void add(long value) {
-            data[ptr++] = value;
-            if (ptr == data.length) {
-                ptr = 0;
-            }
-            if (size < data.length) {
-                size++;
-            }
-        }
-
-        public long avg() {
-            long total = 0;
-            for (int i = 0, pos = ptr; i < size; i++) {
-                if (pos == 0) {
-                    pos = data.length - 1;
-                } else {
-                    pos--;
-                }
-                total += data[pos];
-            }
-            return total / size;
-        }
     }
 }

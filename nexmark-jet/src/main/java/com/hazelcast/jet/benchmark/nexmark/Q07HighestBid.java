@@ -25,6 +25,7 @@ import java.util.Properties;
 
 import static com.hazelcast.function.ComparatorEx.comparing;
 import static com.hazelcast.jet.aggregate.AggregateOperations.maxBy;
+import static com.hazelcast.jet.benchmark.nexmark.EventSourceP.eventSource;
 import static com.hazelcast.jet.pipeline.WindowDefinition.tumbling;
 import static java.util.concurrent.TimeUnit.MINUTES;
 
@@ -39,8 +40,9 @@ public class Q07HighestBid extends BenchmarkBase {
         int sievingFactor = Math.max(1, eventsPerSecond / (8192 * auctionIdModulus));
 
         return pipeline
-                .readFrom(EventSourceP.eventSource(eventsPerSecond, INITIAL_SOURCE_DELAY_MILLIS,
-                        (seq, timestamp) -> new Bid(seq, timestamp, seq, 0)))
+                .readFrom(eventSource(eventsPerSecond, INITIAL_SOURCE_DELAY_MILLIS,
+                        (seq, timestamp) -> new Bid(seq, timestamp, seq,
+                                0)))
                 .withNativeTimestamps(0)
                 .window(tumbling(MINUTES.toMillis(1)))
                 .aggregate(maxBy(comparing(Bid::price)))

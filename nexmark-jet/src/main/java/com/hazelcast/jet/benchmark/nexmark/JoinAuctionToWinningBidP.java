@@ -10,6 +10,7 @@ import com.hazelcast.jet.core.Watermark;
 import com.hazelcast.jet.datamodel.Tuple2;
 import com.hazelcast.jet.pipeline.StreamStage;
 
+import javax.annotation.Nonnull;
 import java.util.ArrayList;
 import java.util.Collection;
 import java.util.HashMap;
@@ -51,10 +52,9 @@ public class JoinAuctionToWinningBidP extends AbstractProcessor {
     public static FunctionEx<StreamStage<Object>, StreamStage<Tuple2<Auction, Bid>>> joinAuctionToWinningBid(
             long auctionMaxDuration
     ) {
-        return upstream ->
-                upstream
-                        .groupingKey(o -> o instanceof Bid ? ((Bid) o).auctionId() : ((Auction) o).id())
-                        .customTransform("findClosedAuctions", () -> new JoinAuctionToWinningBidP(auctionMaxDuration));
+        return upstream -> upstream
+                .groupingKey(o -> o instanceof Bid ? ((Bid) o).auctionId() : ((Auction) o).id())
+                .customTransform("findClosedAuctions", () -> new JoinAuctionToWinningBidP(auctionMaxDuration));
     }
 
     private JoinAuctionToWinningBidP(long auctionMaxDuration) {
@@ -62,7 +62,7 @@ public class JoinAuctionToWinningBidP extends AbstractProcessor {
     }
 
     @Override
-    protected boolean tryProcess0(Object item) {
+    protected boolean tryProcess0(@Nonnull Object item) {
         if (item instanceof Auction) {
             Auction auction = (Auction) item;
             auctionsByExpiry
@@ -76,7 +76,7 @@ public class JoinAuctionToWinningBidP extends AbstractProcessor {
     }
 
     @Override
-    public boolean tryProcessWatermark(Watermark watermark) {
+    public boolean tryProcessWatermark(@Nonnull Watermark watermark) {
         if (outputTraverser == null) {
             Collection<List<Auction>> expiredAuctions = auctionsByExpiry.headMap(watermark.timestamp()).values();
             outputTraverser = traverseIterable(expiredAuctions)

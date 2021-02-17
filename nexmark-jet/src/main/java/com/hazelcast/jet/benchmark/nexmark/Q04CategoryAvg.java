@@ -26,8 +26,7 @@ public class Q04CategoryAvg extends BenchmarkBase {
         int numDistinctKeys = parseIntProp(props, PROP_NUM_DISTINCT_KEYS);
         int eventsPerSecond = parseIntProp(props, PROP_EVENTS_PER_SECOND);
         int bidsPerAuction = 10;
-        long auctionMaxDuration = 1024;
-        long auctionTtl = (long) numDistinctKeys * bidsPerAuction * 1000 / eventsPerSecond;
+        long auctionMaxDuration = 2L * numDistinctKeys * bidsPerAuction * 1000 / eventsPerSecond;
 
         // We generate auctions at rate eventsPerSecond / bidsPerAuction.
         // We generate bids at rate eventsPerSecond, each bid refers to
