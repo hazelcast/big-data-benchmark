@@ -1,21 +1,33 @@
+/*
+ * Copyright (c) 2008-2019, Hazelcast, Inc. All Rights Reserved.
+ *
+ * Licensed under the Apache License, Version 2.0 (the "License");
+ * you may not use this file except in compliance with the License.
+ * You may obtain a copy of the License at
+ *
+ * http://www.apache.org/licenses/LICENSE-2.0
+ *
+ * Unless required by applicable law or agreed to in writing, software
+ * distributed under the License is distributed on an "AS IS" BASIS,
+ * WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+ * See the License for the specific language governing permissions and
+ * limitations under the License.
+ */
+
 package com.hazelcast.jet.benchmark.nexmark;
 
 import com.hazelcast.jet.benchmark.nexmark.model.Auction;
 import com.hazelcast.jet.benchmark.nexmark.model.Bid;
 import com.hazelcast.jet.datamodel.Tuple2;
-import com.hazelcast.jet.datamodel.Tuple3;
 import com.hazelcast.jet.pipeline.Pipeline;
 import com.hazelcast.jet.pipeline.StreamStage;
 
-import java.util.Map.Entry;
 import java.util.Properties;
 
-import static com.hazelcast.function.ComparatorEx.comparing;
-import static com.hazelcast.jet.aggregate.AggregateOperations.maxBy;
 import static com.hazelcast.jet.benchmark.nexmark.ClosedAuctionP.closedAuction;
-import static com.hazelcast.jet.datamodel.Tuple3.tuple3;
+import static com.hazelcast.jet.datamodel.Tuple2.tuple2;
 
-public class Q04CategoryAvg extends BenchmarkBase {
+public class Q06AvgSellingPrice extends BenchmarkBase {
 
     @Override
     StreamStage<Tuple2<Long, Long>> addComputation(
@@ -27,6 +39,7 @@ public class Q04CategoryAvg extends BenchmarkBase {
         int sievingFactor = Math.max(1, eventsPerSecond / (8192 * auctionIdModulus));
         int auctionBidRatio = 10;
         long auctionMaxDuration = 1024;
+        int windowItemCount = 10;
 
         // We generate auctions at rate eventsPerSecond / auctionBidRatio.
         // We generate bids at rate eventsPerSecond, each bid refers to auctionId = seq / auctionBidRatio
@@ -51,12 +64,47 @@ public class Q04CategoryAvg extends BenchmarkBase {
         return auctions
                 .merge(bids)
                 .apply(closedAuction(auctionMaxDuration))
-                .map(t -> tuple3(t.f0().category(), t.f1().price(), t.f0().expires()))
-                .groupingKey(Tuple3::f0) // Tuple 3 is: category, maxPrice, expireTime
-                .rollingAggregate(maxBy(comparing(Tuple3::f1)))
-                .map(Entry::getValue)
+                .groupingKey(t -> t.f0().sellerId())
+                .mapStateful(() -> new LongRingBuffer(windowItemCount),
+                        (ctx, key, item) -> {
+                            ctx.add(item.f1().price());
+                            return tuple2(ctx.avg(), item.f0().expires());
+                        })
 
-                .filter(t3 -> t3.f2() % sievingFactor == 0)
-                .apply(stage -> determineLatency(stage, Tuple3::f2));
+                .filter(t -> t.f1() % sievingFactor == 0)
+                .apply(stage -> determineLatency(stage, Tuple2::f1));
+    }
+
+    private static final class LongRingBuffer {
+        private final long[] data;
+        private int ptr;
+        private int size;
+
+        LongRingBuffer(int capacity) {
+            data = new long[capacity];
+        }
+
+        public void add(long value) {
+            data[ptr++] = value;
+            if (ptr == data.length) {
+                ptr = 0;
+            }
+            if (size < data.length) {
+                size++;
+            }
+        }
+
+        public long avg() {
+            long total = 0;
+            for (int i = 0, pos = ptr; i < size; i++) {
+                if (pos == 0) {
+                    pos = data.length - 1;
+                } else {
+                    pos--;
+                }
+                total += data[pos];
+            }
+            return total / size;
+        }
     }
 }
