@@ -24,7 +24,7 @@ import com.hazelcast.jet.pipeline.StreamStage;
 
 import java.util.Properties;
 
-import static com.hazelcast.jet.benchmark.nexmark.ClosedAuctionP.closedAuction;
+import static com.hazelcast.jet.benchmark.nexmark.JoinAuctionToWinningBidP.joinAuctionToWinningBid;
 import static com.hazelcast.jet.datamodel.Tuple2.tuple2;
 
 public class Q06AvgSellingPrice extends BenchmarkBase {
@@ -63,7 +63,7 @@ public class Q06AvgSellingPrice extends BenchmarkBase {
 
         return auctions
                 .merge(bids)
-                .apply(closedAuction(auctionMaxDuration))
+                .apply(joinAuctionToWinningBid(auctionMaxDuration))
                 .groupingKey(t -> t.f0().sellerId())
                 .mapStateful(() -> new LongRingBuffer(windowItemCount),
                         (ctx, key, item) -> {

@@ -25,7 +25,7 @@ import static com.hazelcast.jet.datamodel.Tuple2.tuple2;
  * Bid} items. It tracks the bids and emits the winning bid when the
  * auction expires.
  */
-public class ClosedAuctionP extends AbstractProcessor {
+public class JoinAuctionToWinningBidP extends AbstractProcessor {
 
     private final long auctionMaxDuration;
 
@@ -48,14 +48,16 @@ public class ClosedAuctionP extends AbstractProcessor {
     private Traverser<Tuple2<Auction, Bid>> outputTraverser;
     private long nextCleanUpTime;
 
-    public static FunctionEx<StreamStage<Object>, StreamStage<Tuple2<Auction, Bid>>> closedAuction(long auctionMaxDuration) {
+    public static FunctionEx<StreamStage<Object>, StreamStage<Tuple2<Auction, Bid>>> joinAuctionToWinningBid(
+            long auctionMaxDuration
+    ) {
         return upstream ->
                 upstream
                         .groupingKey(o -> o instanceof Bid ? ((Bid) o).auctionId() : ((Auction) o).id())
-                        .customTransform("findClosedAuctions", () -> new ClosedAuctionP(auctionMaxDuration));
+                        .customTransform("findClosedAuctions", () -> new JoinAuctionToWinningBidP(auctionMaxDuration));
     }
 
-    private ClosedAuctionP(long auctionMaxDuration) {
+    private JoinAuctionToWinningBidP(long auctionMaxDuration) {
         this.auctionMaxDuration = auctionMaxDuration;
     }
 
@@ -68,7 +70,7 @@ public class ClosedAuctionP extends AbstractProcessor {
                     .add(auction);
         } else {
             Bid bid = (Bid) item;
-            bids.merge(bid.auctionId(), bid, (bid1, bid2) -> bid1.price() > bid2.price() ? bid1 : bid2);
+            bids.merge(bid.auctionId(), bid, (prev, curr) -> prev.price() >= curr.price() ? prev : curr);
         }
         return true;
     }

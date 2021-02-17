@@ -12,8 +12,10 @@ import java.util.Properties;
 
 import static com.hazelcast.function.ComparatorEx.comparing;
 import static com.hazelcast.jet.aggregate.AggregateOperations.maxBy;
-import static com.hazelcast.jet.benchmark.nexmark.ClosedAuctionP.closedAuction;
+import static com.hazelcast.jet.benchmark.nexmark.JoinAuctionToWinningBidP.joinAuctionToWinningBid;
+import static com.hazelcast.jet.benchmark.nexmark.EventSourceP.eventSource;
 import static com.hazelcast.jet.datamodel.Tuple3.tuple3;
+
 
 public class Q04CategoryAvg extends BenchmarkBase {
 
@@ -22,17 +24,17 @@ public class Q04CategoryAvg extends BenchmarkBase {
             Pipeline pipeline, Properties props
     ) throws ValidationException {
         int numDistinctKeys = parseIntProp(props, PROP_NUM_DISTINCT_KEYS);
-        int auctionIdModulus = 128;
         int eventsPerSecond = parseIntProp(props, PROP_EVENTS_PER_SECOND);
-        int sievingFactor = Math.max(1, eventsPerSecond / (8192 * auctionIdModulus));
-        int auctionBidRatio = 10;
+        int bidsPerAuction = 10;
         long auctionMaxDuration = 1024;
+        long auctionTtl = (long) numDistinctKeys * bidsPerAuction * 1000 / eventsPerSecond;
 
-        // We generate auctions at rate eventsPerSecond / auctionBidRatio.
-        // We generate bids at rate eventsPerSecond, each bid refers to auctionId = seq / auctionBidRatio
+        // We generate auctions at rate eventsPerSecond / bidsPerAuction.
+        // We generate bids at rate eventsPerSecond, each bid refers to
+        // auctionId = seq / bidsPerAuction
 
         StreamStage<Object> auctions = pipeline
-                .readFrom(EventSourceP.eventSource(eventsPerSecond / auctionBidRatio, INITIAL_SOURCE_DELAY_MILLIS,
+                .readFrom(eventSource(eventsPerSecond / bidsPerAuction, INITIAL_SOURCE_DELAY_MILLIS,
                         (seq, timestamp) -> {
                             long sellerId = getRandom(137 * seq, numDistinctKeys);
                             long duration = getRandom(271 * seq, auctionMaxDuration);
@@ -43,20 +45,19 @@ public class Q04CategoryAvg extends BenchmarkBase {
                 .map(p -> p);
 
         StreamStage<Object> bids = pipeline
-                .readFrom(EventSourceP.eventSource(eventsPerSecond, INITIAL_SOURCE_DELAY_MILLIS,
-                        (seq, timestamp) -> new Bid(seq, timestamp, seq / auctionBidRatio, 0)))
+                .readFrom(eventSource(eventsPerSecond, INITIAL_SOURCE_DELAY_MILLIS,
+                        (seq, timestamp) -> new Bid(seq, timestamp, seq / bidsPerAuction, 0)))
                 .withNativeTimestamps(0)
                 .map(p -> p);
 
         return auctions
                 .merge(bids)
-                .apply(closedAuction(auctionMaxDuration))
+                .apply(joinAuctionToWinningBid(auctionMaxDuration))
                 .map(t -> tuple3(t.f0().category(), t.f1().price(), t.f0().expires()))
                 .groupingKey(Tuple3::f0) // Tuple 3 is: category, maxPrice, expireTime
                 .rollingAggregate(maxBy(comparing(Tuple3::f1)))
                 .map(Entry::getValue)
 
-                .filter(t3 -> t3.f2() % sievingFactor == 0)
                 .apply(stage -> determineLatency(stage, Tuple3::f2));
     }
 }

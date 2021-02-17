@@ -1,7 +1,6 @@
 package com.hazelcast.jet.benchmark.nexmark;
 
 import com.hazelcast.jet.Traverser;
-import com.hazelcast.jet.Traversers;
 import com.hazelcast.jet.benchmark.nexmark.model.Auction;
 import com.hazelcast.jet.benchmark.nexmark.model.Person;
 import com.hazelcast.jet.datamodel.Tuple2;
@@ -35,17 +34,17 @@ public class Q03LocalItemSuggestion extends BenchmarkBase {
         // This code respects numDistinctKeys indirectly, by creating a pattern of
         // seller IDs over time so that there are auctions with a given seller ID
         // for a limited time. A "cloud" of random seller IDs slowly moves up the
-        // integer line. It advances by one every auctionsPerPersonEvent. The width
+        // integer line. It advances by one every auctionsPerSeller. The width
         // of the cloud is numDistinckKeys. We calculate the TTL for the keyed
         // mapStateful stage to match the amount of time during which this cloud
         // covers any given seller ID.
         int numDistinctKeys = parseIntProp(props, PROP_NUM_DISTINCT_KEYS);
         int eventsPerSecond = parseIntProp(props, PROP_EVENTS_PER_SECOND);
-        int auctionsPerPersonEvent = 100;
-        long ttl = (long) numDistinctKeys * auctionsPerPersonEvent * 1000 / eventsPerSecond;
+        int auctionsPerSeller = 100;
+        long ttl = (long) numDistinctKeys * auctionsPerSeller * 1000 / eventsPerSecond;
 
         StreamStage<Object> persons = pipeline
-                .readFrom(eventSource(eventsPerSecond / auctionsPerPersonEvent, INITIAL_SOURCE_DELAY_MILLIS,
+                .readFrom(eventSource(eventsPerSecond / auctionsPerSeller, INITIAL_SOURCE_DELAY_MILLIS,
                         (seq, timestamp) -> {
                             long id = seq;
                             return new Person(id, timestamp, "Seller #" + id, STATES[seq.intValue() % STATES.length]);
@@ -56,12 +55,12 @@ public class Q03LocalItemSuggestion extends BenchmarkBase {
 
         StreamStage<Object> auctions = pipeline
                 .readFrom(eventSource(eventsPerSecond, INITIAL_SOURCE_DELAY_MILLIS, (seq, timestamp) -> {
-                    long sellerId = seq / auctionsPerPersonEvent - getRandom(seq, numDistinctKeys);
+                    long sellerId = seq / auctionsPerSeller - getRandom(seq, numDistinctKeys);
                     if (sellerId < 0) {
-                        return new Auction(seq, timestamp, 0, 1); // will be filtered out
+                        return new Auction(seq, timestamp, 0, 1, 0); // will be filtered out
                     }
                     int categoryId = (int) getRandom(seq, 10);
-                    return new Auction(seq, timestamp, sellerId, categoryId);
+                    return new Auction(seq, timestamp, sellerId, categoryId, timestamp + ttl);
                 }))
                 .withNativeTimestamps(0)
                 .filter(a -> a.category() == 0)
@@ -70,7 +69,7 @@ public class Q03LocalItemSuggestion extends BenchmarkBase {
         return persons
                 .merge(auctions)
                 .groupingKey(o -> o instanceof Person ? ((Person) o).id() : ((Auction) o).sellerId())
-                .flatMapStateful(ttl, SellerAuctionJoin::new, SellerAuctionJoin::flatMap, null)
+                .flatMapStateful(ttl, SellerAuctionJoin::new, SellerAuctionJoin::flatMap, (buf, key, wm) -> null)
 
                 .apply(stage -> determineLatency(stage, Tuple5::f2));
     }
