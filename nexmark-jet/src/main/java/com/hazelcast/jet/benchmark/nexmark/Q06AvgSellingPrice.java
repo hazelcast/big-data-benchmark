@@ -28,6 +28,7 @@ import java.util.Properties;
 import static com.hazelcast.jet.benchmark.nexmark.EventSourceP.eventSource;
 import static com.hazelcast.jet.benchmark.nexmark.JoinAuctionToWinningBidP.joinAuctionToWinningBid;
 import static com.hazelcast.jet.datamodel.Tuple2.tuple2;
+import static java.lang.Math.max;
 
 public class Q06AvgSellingPrice extends BenchmarkBase {
 
@@ -36,11 +37,12 @@ public class Q06AvgSellingPrice extends BenchmarkBase {
             Pipeline pipeline, Properties props
     ) throws ValidationException {
         int numDistinctKeys = parseIntProp(props, PROP_NUM_DISTINCT_KEYS);
-        int eventsPerSecond = parseIntProp(props, PROP_EVENTS_PER_SECOND);
-        int sievingFactor = Math.max(1, eventsPerSecond / 8192);
-        int bidsPerAuction = 10;
-        long auctionMaxDuration = 1024;
-        long auctionMinDuration = auctionMaxDuration / 2;
+        int bidsPerSecond = parseIntProp(props, PROP_EVENTS_PER_SECOND);
+        int auctionsPerSecond = 1000;
+        int bidsPerAuction = max(1, bidsPerSecond / auctionsPerSecond);
+        long auctionMinDuration = (long) numDistinctKeys * bidsPerAuction * 1000 / bidsPerSecond;
+        long auctionMaxDuration = 2 * auctionMinDuration;
+        System.out.format("Auction duration: %,d .. %,d ms%n", auctionMinDuration, auctionMaxDuration);
         long maxBid = 1000;
         int windowItemCount = 10;
 
@@ -49,7 +51,7 @@ public class Q06AvgSellingPrice extends BenchmarkBase {
         // auctionId = seq / bidsPerAuction
 
         StreamStage<Object> auctions = pipeline
-                .<Object>readFrom(eventSource(eventsPerSecond / bidsPerAuction, INITIAL_SOURCE_DELAY_MILLIS,
+                .<Object>readFrom(eventSource(bidsPerSecond / bidsPerAuction, INITIAL_SOURCE_DELAY_MILLIS,
                         (seq, timestamp) -> {
                             long sellerId = getRandom(137 * seq, numDistinctKeys);
                             long duration = auctionMinDuration +
@@ -60,7 +62,7 @@ public class Q06AvgSellingPrice extends BenchmarkBase {
                 .withNativeTimestamps(0);
 
         StreamStage<Bid> bids = pipeline
-                .readFrom(eventSource(eventsPerSecond, INITIAL_SOURCE_DELAY_MILLIS,
+                .readFrom(eventSource(bidsPerSecond, INITIAL_SOURCE_DELAY_MILLIS,
                         (seq, timestamp) -> {
                             long price = getRandom(seq, maxBid);
                             long auctionId = seq / bidsPerAuction;
@@ -72,7 +74,7 @@ public class Q06AvgSellingPrice extends BenchmarkBase {
         return auctions
                 .merge(bids)
                 .apply(joinAuctionToWinningBid(auctionMaxDuration))
-                .groupingKey(t -> t.f0().sellerId())
+                .groupingKey(auctionAndBid -> auctionAndBid.f0().sellerId())
                 .mapStateful(() -> new ArrayDeque<Long>(windowItemCount),
                         (deque, key, item) -> {
                             if (deque.size() == windowItemCount) {
@@ -83,7 +85,6 @@ public class Q06AvgSellingPrice extends BenchmarkBase {
                         })
         // NEXMark Query 6 end
 
-                .filter(t -> t.f1() % sievingFactor == 0)
                 .apply(stage -> determineLatency(stage, Tuple2::f1));
     }
 }

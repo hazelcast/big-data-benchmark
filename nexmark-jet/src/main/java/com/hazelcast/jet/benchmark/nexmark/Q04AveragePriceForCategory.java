@@ -30,8 +30,9 @@ public class Q04AveragePriceForCategory extends BenchmarkBase {
         int bidsPerSecond = parseIntProp(props, PROP_EVENTS_PER_SECOND);
         int auctionsPerSecond = 1000;
         int bidsPerAuction = max(1, bidsPerSecond / auctionsPerSecond);
-        long auctionMaxDuration = 2L * numDistinctKeys * bidsPerAuction * 1000 / bidsPerSecond;
-        System.out.format("Max auction duration: %,d ms%n", auctionMaxDuration);
+        long auctionMinDuration = (long) numDistinctKeys * bidsPerAuction * 1000 / bidsPerSecond;
+        long auctionMaxDuration = 2 * auctionMinDuration;
+        System.out.format("Auction duration: %,d .. %,d ms%n", auctionMinDuration, auctionMaxDuration);
 
         // We generate auctions at rate bidsPerSecond / bidsPerAuction.
         // We generate bids at rate bidsPerSecond, each bid refers to
@@ -41,7 +42,8 @@ public class Q04AveragePriceForCategory extends BenchmarkBase {
                 .<Object>readFrom(eventSource(bidsPerSecond / bidsPerAuction, INITIAL_SOURCE_DELAY_MILLIS,
                         (seq, timestamp) -> {
                             long sellerId = getRandom(137 * seq, numDistinctKeys);
-                            long duration = getRandom(271 * seq, auctionMaxDuration);
+                            long duration = auctionMinDuration +
+                                    getRandom(271 * seq, auctionMaxDuration - auctionMinDuration);
                             int category = (int) getRandom(743 * seq, 128);
                             return new Auction(seq, timestamp, sellerId, category, timestamp + duration);
                         }))
