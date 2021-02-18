@@ -26,15 +26,19 @@ public class Q05HotItems extends BenchmarkBase {
         int numDistinctKeys = parseIntProp(props, PROP_NUM_DISTINCT_KEYS);
         int windowSize = parseIntProp(props, PROP_WINDOW_SIZE_MILLIS);
         long slideBy = parseIntProp(props, PROP_SLIDING_STEP_MILLIS);
-        return pipeline
+        StreamStage<Bid> bids = pipeline
                 .readFrom(eventSource(eventsPerSecond, INITIAL_SOURCE_DELAY_MILLIS, (seq, timestamp) ->
                         new Bid(seq, timestamp, seq % numDistinctKeys, 0)))
-                .withNativeTimestamps(0)
+                .withNativeTimestamps(0);
+
+        // NEXMark Query 5 start
+        return bids
                 .window(sliding(windowSize, slideBy))
                 .groupingKey(Bid::auctionId)
                 .aggregate(counting())
                 .window(tumbling(slideBy))
                 .aggregate(topN(10, comparing(KeyedWindowResult::result)))
+        // NEXMark Query 5 end
 
                 .apply(stage -> determineLatency(stage, WindowResult::end));
     }

@@ -33,14 +33,16 @@ public class Q13BoundedSideInput extends BenchmarkBase {
                 .collect(toList());
         BatchStage<Entry<Long, String>> itemDescriptions =
                 pipeline.readFrom(TestSources.items(descriptionList));
-
-        return pipeline
+        StreamStage<Bid> bids = pipeline
                 .readFrom(eventSource(eventsPerSecond, INITIAL_SOURCE_DELAY_MILLIS, (seq, timestamp) ->
                         new Bid(seq, timestamp, seq % numDistinctKeys, 0)))
-                .withNativeTimestamps(0)
-                .hashJoin(itemDescriptions, joinMapEntries(Bid::auctionId), Tuple2::tuple2)
+                .withNativeTimestamps(0);
 
-                .filter(t2 -> t2.f0().id() % sievingFactor == 0)
-                .apply(stage -> determineLatency(stage, t2 -> t2.f0().timestamp()));
+        // NEXMark Query 13 start
+        return bids.hashJoin(itemDescriptions, joinMapEntries(Bid::auctionId), Tuple2::tuple2)
+        // NEXMark Query 13 end
+
+                   .filter(t2 -> t2.f0().id() % sievingFactor == 0)
+                   .apply(stage -> determineLatency(stage, t2 -> t2.f0().timestamp()));
     }
 }

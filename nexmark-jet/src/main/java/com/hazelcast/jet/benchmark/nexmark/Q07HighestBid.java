@@ -38,14 +38,16 @@ public class Q07HighestBid extends BenchmarkBase {
         int auctionIdModulus = 128;
         int eventsPerSecond = parseIntProp(props, PROP_EVENTS_PER_SECOND);
         int sievingFactor = Math.max(1, eventsPerSecond / (8192 * auctionIdModulus));
-
-        return pipeline
+        StreamStage<Bid> bids = pipeline
                 .readFrom(eventSource(eventsPerSecond, INITIAL_SOURCE_DELAY_MILLIS,
                         (seq, timestamp) -> new Bid(seq, timestamp, seq,
                                 0)))
-                .withNativeTimestamps(0)
+                .withNativeTimestamps(0);
+        // NEXMark Query 7 start
+        return bids
                 .window(tumbling(MINUTES.toMillis(1)))
                 .aggregate(maxBy(comparing(Bid::price)))
+        // NEXMark Query 7 end
 
                 .filter(bid -> bid.result().timestamp() % sievingFactor == 0)
                 .apply(stage -> determineLatency(stage, res -> res.result().timestamp()));

@@ -26,8 +26,11 @@ public class Q02Selection extends BenchmarkBase {
                 .readFrom(eventSource(eventsPerSecond, INITIAL_SOURCE_DELAY_MILLIS, (seq, timestamp) ->
                         new Bid(seq, timestamp, seq % numDistinctKeys, getRandom(seq, 100))))
                 .withNativeTimestamps(0)
+
+                // NEXMark Query 2 start
                 .filter(bid -> bid.auctionId() % auctionIdModulus == 0)
                 .map(bid -> tuple3(bid.timestamp(), bid.auctionId(), bid.price()))
+                // NEXMark Query 2 end
 
                 .filter(t3 -> t3.f1() % sievingFactor == 0)
                 .apply(stage -> determineLatency(stage, Tuple3::f0));

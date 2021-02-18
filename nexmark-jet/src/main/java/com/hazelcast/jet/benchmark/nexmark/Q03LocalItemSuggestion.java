@@ -53,7 +53,7 @@ public class Q03LocalItemSuggestion extends BenchmarkBase {
                 .filter(p  -> p.state().equals("OR") || p.state().equals("CA") || p.state().equals("ID"))
                 .map(p -> p); // upcast
 
-        StreamStage<Object> auctions = pipeline
+        StreamStage<Auction> auctions = pipeline
                 .readFrom(eventSource(eventsPerSecond, INITIAL_SOURCE_DELAY_MILLIS, (seq, timestamp) -> {
                     long sellerId = seq / auctionsPerSeller - getRandom(seq, numDistinctKeys);
                     if (sellerId < 0) {
@@ -63,13 +63,15 @@ public class Q03LocalItemSuggestion extends BenchmarkBase {
                     return new Auction(seq, timestamp, sellerId, categoryId, timestamp + ttl);
                 }))
                 .withNativeTimestamps(0)
-                .filter(a -> a.category() == 0)
-                .map(p -> p); // upcast
+                .filter(a -> a.category() == 0);
 
+        // NEXMark Query 3 start
         return persons
                 .merge(auctions)
                 .groupingKey(o -> o instanceof Person ? ((Person) o).id() : ((Auction) o).sellerId())
-                .flatMapStateful(ttl, JoinAuctionToSeller::new, JoinAuctionToSeller::flatMap, null)
+                .flatMapStateful(ttl, JoinAuctionToSeller::new, JoinAuctionToSeller::flatMap,
+                        (state, key, wm) -> empty())
+        // NEXMark Query 3 end
 
                 .apply(stage -> determineLatency(stage, Tuple5::f2));
     }
@@ -89,8 +91,8 @@ public class Q03LocalItemSuggestion extends BenchmarkBase {
                 Auction auction = (Auction) o;
                 auctions.add(auction);
                 return person != null
-                        ? singleton(tuple5(person.name(), person.state(), auction.timestamp(), auction.id(),
-                        auction.category()))
+                        ? singleton(tuple5(
+                                person.name(), person.state(), auction.timestamp(), auction.id(), auction.category()))
                         : empty();
             }
         }

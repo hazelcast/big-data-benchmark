@@ -8,6 +8,7 @@ import com.hazelcast.jet.benchmark.nexmark.model.Bid;
 import com.hazelcast.jet.core.AbstractProcessor;
 import com.hazelcast.jet.core.Watermark;
 import com.hazelcast.jet.datamodel.Tuple2;
+import com.hazelcast.jet.impl.JetEvent;
 import com.hazelcast.jet.pipeline.StreamStage;
 
 import javax.annotation.Nonnull;
@@ -20,6 +21,7 @@ import java.util.TreeMap;
 
 import static com.hazelcast.jet.Traversers.traverseIterable;
 import static com.hazelcast.jet.datamodel.Tuple2.tuple2;
+import static com.hazelcast.jet.impl.JetEvent.jetEvent;
 
 /**
  * A processor that ingests a merged stream of {@link Auction} and {@link
@@ -34,20 +36,18 @@ public class JoinAuctionToWinningBidP extends AbstractProcessor {
      * Key: expiry time
      * Value: auctions that expire at that time
      */
-    private final TreeMap<Long, List<Auction>> auctionsByExpiry = new TreeMap<>();
+    private final TreeMap<Long, List<Auction>> expiryTimeToAuction = new TreeMap<>();
 
     /**
      * Maximum bids for auctions. We track bids received before the auction is
      * received, we also track bids with timestamp after the auction expiry -
      * those need to be cleaned up regularly.
-     *
-     * Key: auction ID
-     * Value: maximum bid
      */
-    private final Map<Long, Bid> bids = new HashMap<>();
+    private final Map<Long, Bid> auctionIdToMaxBid = new HashMap<>();
 
-    private Traverser<Tuple2<Auction, Bid>> outputTraverser;
+    private Traverser<JetEvent<Tuple2<Auction, Bid>>> outputTraverser;
     private long nextCleanUpTime;
+    private long watermarkTimestamp;
 
     public static FunctionEx<StreamStage<Object>, StreamStage<Tuple2<Auction, Bid>>> joinAuctionToWinningBid(
             long auctionMaxDuration
@@ -62,32 +62,46 @@ public class JoinAuctionToWinningBidP extends AbstractProcessor {
     }
 
     @Override
-    protected boolean tryProcess0(@Nonnull Object item) {
+    protected boolean tryProcess0(@Nonnull Object o) {
+        JetEvent<?> jetEvent = (JetEvent<?>) o;
+        if (jetEvent.timestamp() < watermarkTimestamp) {
+            // drop late event
+            return true;
+        }
+        Object item = jetEvent.payload();
         if (item instanceof Auction) {
             Auction auction = (Auction) item;
-            auctionsByExpiry
+            expiryTimeToAuction
                     .computeIfAbsent(auction.expires(), x -> new ArrayList<>())
                     .add(auction);
         } else {
             Bid bid = (Bid) item;
-            bids.merge(bid.auctionId(), bid, (prev, curr) -> prev.price() >= curr.price() ? prev : curr);
+            auctionIdToMaxBid.merge(bid.auctionId(), bid, (prev, curr) -> prev.price() >= curr.price() ? prev : curr);
         }
         return true;
     }
 
     @Override
     public boolean tryProcessWatermark(@Nonnull Watermark watermark) {
+        watermarkTimestamp = watermark.timestamp();
         if (outputTraverser == null) {
-            Collection<List<Auction>> expiredAuctions = auctionsByExpiry.headMap(watermark.timestamp()).values();
+            Collection<List<Auction>> expiredAuctions = expiryTimeToAuction.headMap(watermarkTimestamp + 1)
+                                                                           .values();
             outputTraverser = traverseIterable(expiredAuctions)
                     .flatMap(Traversers::traverseIterable)
-                    .map(auction -> tuple2(auction, bids.remove(auction.id())))
-                    .onFirstNull(() -> outputTraverser = null);
+                    .map(auction -> tuple2(auction, auctionIdToMaxBid.remove(auction.id())))
+                    .filter(t2 -> t2.f1() != null)
+                    .map(t2 -> jetEvent(t2.f0().expires(), t2))
+                    .onFirstNull(() -> {
+                        expiredAuctions.clear();
+                        outputTraverser = null;
+                    });
 
             // clean up old bids received after the auction expired if sufficient time elapsed
-            if (nextCleanUpTime <= watermark.timestamp()) {
-                nextCleanUpTime = watermark.timestamp() + auctionMaxDuration / 8;
-                bids.values().removeIf(bid -> bid.timestamp() < watermark.timestamp() - auctionMaxDuration);
+            if (nextCleanUpTime <= watermarkTimestamp) {
+                nextCleanUpTime = watermarkTimestamp + auctionMaxDuration / 8;
+                auctionIdToMaxBid.values()
+                                 .removeIf(bid -> bid.timestamp() < watermarkTimestamp - auctionMaxDuration);
             }
         }
         return emitFromTraverser(outputTraverser);

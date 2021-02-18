@@ -41,11 +41,13 @@ public class Q08MonitorNewUsers extends BenchmarkBase {
                 }))
                 .withNativeTimestamps(0);
 
+        // NEXMark Query 8 start
         return persons
                 .window(sliding(windowSize, slideBy))
                 .groupingKey(Person::id)
                 .aggregate2(pickAny(), auctions.groupingKey(Auction::sellerId), counting())
                 .filter(kwr -> kwr.result().f0() != null && kwr.result().f1() > 0)
+        // NEXMark Query 8 end
 
                 .filter(kwr -> kwr.key() % sievingFactor == 0)
                 .apply(stage -> determineLatency(stage, WindowResult::end));

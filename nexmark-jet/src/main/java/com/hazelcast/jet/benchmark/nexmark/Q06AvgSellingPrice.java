@@ -49,7 +49,7 @@ public class Q06AvgSellingPrice extends BenchmarkBase {
         // auctionId = seq / bidsPerAuction
 
         StreamStage<Object> auctions = pipeline
-                .readFrom(eventSource(eventsPerSecond / bidsPerAuction, INITIAL_SOURCE_DELAY_MILLIS,
+                .<Object>readFrom(eventSource(eventsPerSecond / bidsPerAuction, INITIAL_SOURCE_DELAY_MILLIS,
                         (seq, timestamp) -> {
                             long sellerId = getRandom(137 * seq, numDistinctKeys);
                             long duration = auctionMinDuration +
@@ -57,19 +57,18 @@ public class Q06AvgSellingPrice extends BenchmarkBase {
                             int category = (int) getRandom(743 * seq, 128);
                             return new Auction(seq, timestamp, sellerId, category, timestamp + duration);
                         }))
-                .withNativeTimestamps(0)
-                .map(p -> p);
+                .withNativeTimestamps(0);
 
-        StreamStage<Object> bids = pipeline
+        StreamStage<Bid> bids = pipeline
                 .readFrom(eventSource(eventsPerSecond, INITIAL_SOURCE_DELAY_MILLIS,
                         (seq, timestamp) -> {
                             long price = getRandom(seq, maxBid);
                             long auctionId = seq / bidsPerAuction;
                             return new Bid(seq, timestamp, auctionId, price);
                         }))
-                .withNativeTimestamps(0)
-                .map(p -> p);
+                .withNativeTimestamps(0);
 
+        // NEXMark Query 6 start
         return auctions
                 .merge(bids)
                 .apply(joinAuctionToWinningBid(auctionMaxDuration))
@@ -82,6 +81,7 @@ public class Q06AvgSellingPrice extends BenchmarkBase {
                             deque.addLast(item.f1().price());
                             return tuple2(deque.stream().mapToLong(i -> i).average(), item.f0().expires());
                         })
+        // NEXMark Query 6 end
 
                 .filter(t -> t.f1() % sievingFactor == 0)
                 .apply(stage -> determineLatency(stage, Tuple2::f1));
