@@ -29,7 +29,6 @@ import static com.hazelcast.jet.aggregate.AggregateOperations.maxBy;
 import static com.hazelcast.jet.benchmark.nexmark.EventSourceP.eventSource;
 import static com.hazelcast.jet.pipeline.WindowDefinition.tumbling;
 import static java.lang.Math.max;
-import static java.util.concurrent.TimeUnit.MINUTES;
 
 public class Q07HighestBid extends BenchmarkBase {
 
@@ -51,6 +50,6 @@ public class Q07HighestBid extends BenchmarkBase {
                 .aggregate(maxBy(comparing(Bid::price)));
         // NEXMark Query 7 end
 
-        return queryResult.apply(stage -> determineLatency(stage, WindowResult::end));
+        return queryResult.apply(determineLatency(WindowResult::end));
     }
 }

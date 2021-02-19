@@ -173,38 +173,35 @@ public abstract class BenchmarkBase {
         return Math.abs(HashUtil.fastLongMix(seq)) % range;
     }
 
-    <T> StreamStage<Tuple2<Long, Long>> determineLatency(
-            StreamStage<T> stage,
-            FunctionEx<? super T, ? extends Long> timestampFn
-    ) {
+    <T> FunctionEx<StreamStage<T>, StreamStage<Tuple2<Long, Long>>> determineLatency(FunctionEx<? super T, ? extends Long> timestampFn) {
         int latencyReportingThresholdLocal = this.latencyReportingThresholdMs;
-        return stage
-                .map(timestampFn)
-                .mapStateful(LongLongAccumulator::new, // (startTimestamp, lastTimestamp)
-            (state, timestamp) -> {
-                long lastTimestamp = state.get2();
-                if (timestamp <= lastTimestamp) {
-                    return null;
-                }
-                if (lastTimestamp == 0) {
-                    state.set1(timestamp); // state.startTimestamp = timestamp;
-                }
-                long startTimestamp = state.get1();
-                state.set2(timestamp); // state.lastTimestamp = timestamp;
+        return stage ->
+                stage.map(timestampFn)
+                     .mapStateful(LongLongAccumulator::new, /* (startTimestamp, lastTimestamp)*/
+                             (state, timestamp) -> {
+                                 long lastTimestamp = state.get2();
+                                 if (timestamp <= lastTimestamp) {
+                                     return null;
+                                 }
+                                 if (lastTimestamp == 0) {
+                                     state.set1(timestamp); // state.startTimestamp = timestamp;
+                                 }
+                                 long startTimestamp = state.get1();
+                                 state.set2(timestamp); // state.lastTimestamp = timestamp;
 
-                long latency = System.currentTimeMillis() - timestamp;
-                if (latency == -1) { // very low latencies may be reported as negative due to clock skew
-                    latency = 0;
-                }
-                if (latency < 0) {
-                    throw new RuntimeException("Negative latency: " + latency);
-                }
-                long time = simpleTime(timestamp);
-                if (latency >= (long) latencyReportingThresholdLocal) {
-                    System.out.format("time %,d: latency %,d ms%n", time, latency);
-                }
-                return tuple2(timestamp - startTimestamp, latency);
-            });
+                                 long latency = System.currentTimeMillis() - timestamp;
+                                 if (latency == -1) { // very low latencies may be reported as negative due to clock skew
+                                     latency = 0;
+                                 }
+                                 if (latency < 0) {
+                                     throw new RuntimeException("Negative latency: " + latency);
+                                 }
+                                 long time = simpleTime(timestamp);
+                                 if (latency >= (long) latencyReportingThresholdLocal) {
+                                     System.out.format("time %,d: latency %,d ms%n", time, latency);
+                                 }
+                                 return tuple2(timestamp - startTimestamp, latency);
+                             });
     }
 
     private static class RecordLatencyHistogram implements Serializable {

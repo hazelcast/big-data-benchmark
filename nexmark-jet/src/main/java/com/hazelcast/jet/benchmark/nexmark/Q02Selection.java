@@ -35,6 +35,6 @@ public class Q02Selection extends BenchmarkBase {
 
         return queryResult
                 .filter(t -> t.f1() % sievingFactor == 0)
-                .apply(stage -> determineLatency(stage, Tuple3::f0));
+                .apply(determineLatency(Tuple3::f0));
     }
 }

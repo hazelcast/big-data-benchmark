@@ -74,7 +74,7 @@ public class Q03LocalItemSuggestion extends BenchmarkBase {
         // NEXMark Query 3 end
 
         // queryResult: Tuple5(sellerName, sellerState, auctionStart, auctionId, auctionCategory)
-        return queryResult.apply(stage -> determineLatency(stage, Tuple5::f2));
+        return queryResult.apply(determineLatency(Tuple5::f2));
     }
 
     private static final class JoinAuctionToSeller implements Serializable {

@@ -45,6 +45,6 @@ public class Q13BoundedSideInput extends BenchmarkBase {
 
         return queryResult
                    .filter(t2 -> t2.f0().id() % sievingFactor == 0)
-                   .apply(stage -> determineLatency(stage, t2 -> t2.f0().timestamp()));
+                   .apply(determineLatency(t2 -> t2.f0().timestamp()));
     }
 }

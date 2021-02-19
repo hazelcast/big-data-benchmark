@@ -29,6 +29,6 @@ public class Q01CurrencyConversion extends BenchmarkBase {
 
         return queryResult
                 .filter(bid -> bid.id() % sievingFactor == 0)
-                .apply(stage -> determineLatency(stage, Bid::timestamp));
+                .apply(determineLatency(Bid::timestamp));
     }
 }

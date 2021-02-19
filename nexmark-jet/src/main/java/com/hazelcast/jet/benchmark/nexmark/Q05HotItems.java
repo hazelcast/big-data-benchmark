@@ -41,6 +41,6 @@ public class Q05HotItems extends BenchmarkBase {
                 .aggregate(topN(10, comparing(KeyedWindowResult::result)));
         // NEXMark Query 5 end
 
-        return queryResult.apply(stage -> determineLatency(stage, WindowResult::end));
+        return queryResult.apply(determineLatency(WindowResult::end));
     }
 }

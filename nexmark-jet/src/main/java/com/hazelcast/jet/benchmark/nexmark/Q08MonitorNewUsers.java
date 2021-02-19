@@ -52,6 +52,6 @@ public class Q08MonitorNewUsers extends BenchmarkBase {
 
         return queryResult
                 .filter(kwr -> kwr.key() % sievingFactor == 0)
-                .apply(stage -> determineLatency(stage, WindowResult::end));
+                .apply(determineLatency(WindowResult::end));
     }
 }

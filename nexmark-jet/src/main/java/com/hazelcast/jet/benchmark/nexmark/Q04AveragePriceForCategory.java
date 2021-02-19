@@ -19,7 +19,6 @@ import static com.hazelcast.jet.benchmark.nexmark.JoinAuctionToWinningBidP.joinA
 import static com.hazelcast.jet.datamodel.Tuple3.tuple3;
 import static java.lang.Math.max;
 
-
 public class Q04AveragePriceForCategory extends BenchmarkBase {
 
     @Override
@@ -72,7 +71,7 @@ public class Q04AveragePriceForCategory extends BenchmarkBase {
         // NEXMark Query 4 end
 
         // queryResult: Tuple3(category, averagePrice, latestAuctionEnd)
-        return queryResult.apply(stage -> determineLatency(stage, Tuple3::f2));
+        return queryResult.apply(determineLatency(Tuple3::f2));
     }
 
     static <T> AggregateOperation1<T, MutableReference<T>, T> lastSeen() {

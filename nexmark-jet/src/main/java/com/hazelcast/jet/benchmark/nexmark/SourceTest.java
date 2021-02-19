@@ -35,6 +35,6 @@ public class SourceTest extends BenchmarkBase {
                 .window(sliding(windowSize, slideBy))
                 .aggregate(counting())
                 .peek()
-                .apply(stage -> determineLatency(stage, WindowResult::end));
+                .apply(determineLatency(WindowResult::end));
     }
 }

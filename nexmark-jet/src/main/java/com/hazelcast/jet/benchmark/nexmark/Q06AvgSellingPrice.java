@@ -87,6 +87,6 @@ public class Q06AvgSellingPrice extends BenchmarkBase {
         // NEXMark Query 6 end
 
         // queryResult: Tuple2(averagePrice, auctionExpirationTime)
-        return queryResult.apply(stage -> determineLatency(stage, Tuple2::f1));
+        return queryResult.apply(determineLatency(Tuple2::f1));
     }
 }
