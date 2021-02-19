@@ -28,7 +28,7 @@ public class Bid extends Event {
 
         @Override
         public int getTypeId() {
-            return 1;
+            return 2;
         }
 
         @Override

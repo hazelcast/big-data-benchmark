@@ -4,6 +4,7 @@ import com.hazelcast.function.FunctionEx;
 import com.hazelcast.internal.util.HashUtil;
 import com.hazelcast.jet.Jet;
 import com.hazelcast.jet.accumulator.LongLongAccumulator;
+import com.hazelcast.jet.benchmark.nexmark.model.Auction;
 import com.hazelcast.jet.benchmark.nexmark.model.Bid;
 import com.hazelcast.jet.benchmark.nexmark.model.Person;
 import com.hazelcast.jet.config.JobConfig;
@@ -68,6 +69,7 @@ public abstract class BenchmarkBase {
         Properties props = loadProps();
         var jobCfg = new JobConfig();
         jobCfg.setName(benchmarkName);
+        jobCfg.registerSerializer(Auction.class, Auction.AuctionSerializer.class);
         jobCfg.registerSerializer(Bid.class, Bid.BidSerializer.class);
         jobCfg.registerSerializer(Person.class, Person.PersonSerializer.class);
         var jet = Jet.bootstrappedInstance();

@@ -1,8 +1,13 @@
 package com.hazelcast.jet.benchmark.nexmark.model;
 
+import com.hazelcast.nio.ObjectDataInput;
+import com.hazelcast.nio.ObjectDataOutput;
+import com.hazelcast.nio.serialization.StreamSerializer;
+
+import java.io.IOException;
+
 public class Auction extends Event {
     private final long sellerId;
-
     private final int category;
     private final long expires;
 
@@ -23,5 +28,33 @@ public class Auction extends Event {
 
     public long expires() {
         return expires;
+    }
+
+    public static class AuctionSerializer implements StreamSerializer<Auction> {
+
+        @Override
+        public int getTypeId() {
+            return 1;
+        }
+
+        @Override
+        public void write(ObjectDataOutput out, Auction auction) throws IOException {
+            out.writeLong(auction.id());
+            out.writeLong(auction.timestamp());
+            out.writeLong(auction.sellerId());
+            out.writeInt(auction.category());
+            out.writeLong(auction.expires());
+        }
+
+        @Override
+        public Auction read(ObjectDataInput in) throws IOException {
+            long id = in.readLong();
+            long timestamp = in.readLong();
+            long sellerId = in.readLong();
+            int category = in.readInt();
+            long expires = in.readLong();
+
+            return new Auction(id, timestamp, sellerId, category, expires);
+        }
     }
 }
