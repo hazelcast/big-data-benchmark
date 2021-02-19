@@ -55,10 +55,10 @@ public class Q04AveragePriceForCategory extends BenchmarkBase {
                 .withNativeTimestamps(0);
 
         // NEXMark Query 4 start
-        return auctions
+        StreamStage<Tuple3<Integer, Double, Long>> queryResult = auctions
                 .merge(bids)
-                .apply(joinAuctionToWinningBid(auctionMaxDuration))
-                .map(t2 -> tuple3(t2.f0().category(), t2.f1().price(), t2.f0().expires())) // "catPriceExpires"
+                .apply(joinAuctionToWinningBid(auctionMaxDuration)) // Tuple2(auction, winningBid)
+                .map(t -> tuple3(t.f0().category(), t.f1().price(), t.f0().expires())) // "catPriceExpires"
                 .groupingKey(Tuple3::f0)
                 .rollingAggregate(allOf(averagingLong(Tuple3::f1), lastSeen()))
                 .map(catAndAggrResults -> {
@@ -68,10 +68,11 @@ public class Q04AveragePriceForCategory extends BenchmarkBase {
                     double averagePrice = aggrResults.f0();
                     long latestAuctionEnd = catPriceExpires.f2();
                     return tuple3(category, averagePrice, latestAuctionEnd);
-                })
+                });
         // NEXMark Query 4 end
 
-                .apply(stage -> determineLatency(stage, Tuple3::f2));
+        // queryResult: Tuple3(category, averagePrice, latestAuctionEnd)
+        return queryResult.apply(stage -> determineLatency(stage, Tuple3::f2));
     }
 
     static <T> AggregateOperation1<T, MutableReference<T>, T> lastSeen() {

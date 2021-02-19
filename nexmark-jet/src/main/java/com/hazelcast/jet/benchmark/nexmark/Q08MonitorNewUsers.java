@@ -2,6 +2,7 @@ package com.hazelcast.jet.benchmark.nexmark;
 
 import com.hazelcast.jet.benchmark.nexmark.model.Auction;
 import com.hazelcast.jet.benchmark.nexmark.model.Person;
+import com.hazelcast.jet.datamodel.KeyedWindowResult;
 import com.hazelcast.jet.datamodel.Tuple2;
 import com.hazelcast.jet.datamodel.WindowResult;
 import com.hazelcast.jet.pipeline.Pipeline;
@@ -42,13 +43,14 @@ public class Q08MonitorNewUsers extends BenchmarkBase {
                 .withNativeTimestamps(0);
 
         // NEXMark Query 8 start
-        return persons
+        StreamStage<KeyedWindowResult<Long, Tuple2<Person, Long>>> queryResult = persons
                 .window(sliding(windowSize, slideBy))
                 .groupingKey(Person::id)
                 .aggregate2(pickAny(), auctions.groupingKey(Auction::sellerId), counting())
-                .filter(kwr -> kwr.result().f0() != null && kwr.result().f1() > 0)
+                .filter(kwr -> kwr.result().f0() != null && kwr.result().f1() > 0);
         // NEXMark Query 8 end
 
+        return queryResult
                 .filter(kwr -> kwr.key() % sievingFactor == 0)
                 .apply(stage -> determineLatency(stage, WindowResult::end));
     }

@@ -22,17 +22,19 @@ public class Q02Selection extends BenchmarkBase {
         int eventsPerSecond = parseIntProp(props, PROP_EVENTS_PER_SECOND);
         int sievingFactor = Math.max(1, eventsPerSecond / (8192 * auctionIdModulus));
 
-        return pipeline
+        StreamStage<Bid> bids = pipeline
                 .readFrom(eventSource(eventsPerSecond, INITIAL_SOURCE_DELAY_MILLIS, (seq, timestamp) ->
                         new Bid(seq, timestamp, seq % numDistinctKeys, getRandom(seq, 100))))
-                .withNativeTimestamps(0)
+                .withNativeTimestamps(0);
 
-                // NEXMark Query 2 start
+        // NEXMark Query 2 start
+        StreamStage<Tuple3<Long, Long, Long>> queryResult = bids
                 .filter(bid -> bid.auctionId() % auctionIdModulus == 0)
-                .map(bid -> tuple3(bid.timestamp(), bid.auctionId(), bid.price()))
-                // NEXMark Query 2 end
+                .map(bid -> tuple3(bid.timestamp(), bid.auctionId(), bid.price()));
+        // NEXMark Query 2 end
 
-                .filter(t3 -> t3.f1() % sievingFactor == 0)
+        return queryResult
+                .filter(t -> t.f1() % sievingFactor == 0)
                 .apply(stage -> determineLatency(stage, Tuple3::f0));
     }
 }

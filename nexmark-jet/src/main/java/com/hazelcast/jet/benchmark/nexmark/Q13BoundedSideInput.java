@@ -39,9 +39,11 @@ public class Q13BoundedSideInput extends BenchmarkBase {
                 .withNativeTimestamps(0);
 
         // NEXMark Query 13 start
-        return bids.hashJoin(itemDescriptions, joinMapEntries(Bid::auctionId), Tuple2::tuple2)
+        StreamStage<Tuple2<Bid, String>> queryResult =
+                bids.hashJoin(itemDescriptions, joinMapEntries(Bid::auctionId), Tuple2::tuple2);
         // NEXMark Query 13 end
 
+        return queryResult
                    .filter(t2 -> t2.f0().id() % sievingFactor == 0)
                    .apply(stage -> determineLatency(stage, t2 -> t2.f0().timestamp()));
     }

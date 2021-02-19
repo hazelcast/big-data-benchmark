@@ -23,6 +23,7 @@ import com.hazelcast.jet.pipeline.Pipeline;
 import com.hazelcast.jet.pipeline.StreamStage;
 
 import java.util.ArrayDeque;
+import java.util.OptionalDouble;
 import java.util.Properties;
 
 import static com.hazelcast.jet.benchmark.nexmark.EventSourceP.eventSource;
@@ -71,7 +72,7 @@ public class Q06AvgSellingPrice extends BenchmarkBase {
                 .withNativeTimestamps(0);
 
         // NEXMark Query 6 start
-        return auctions
+        StreamStage<Tuple2<OptionalDouble, Long>> queryResult = auctions
                 .merge(bids)
                 .apply(joinAuctionToWinningBid(auctionMaxDuration))
                 .groupingKey(auctionAndBid -> auctionAndBid.f0().sellerId())
@@ -82,9 +83,10 @@ public class Q06AvgSellingPrice extends BenchmarkBase {
                             }
                             deque.addLast(item.f1().price());
                             return tuple2(deque.stream().mapToLong(i -> i).average(), item.f0().expires());
-                        })
+                        });
         // NEXMark Query 6 end
 
-                .apply(stage -> determineLatency(stage, Tuple2::f1));
+        // queryResult: Tuple2(averagePrice, auctionExpirationTime)
+        return queryResult.apply(stage -> determineLatency(stage, Tuple2::f1));
     }
 }

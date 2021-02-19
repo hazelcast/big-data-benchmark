@@ -7,6 +7,7 @@ import com.hazelcast.jet.datamodel.WindowResult;
 import com.hazelcast.jet.pipeline.Pipeline;
 import com.hazelcast.jet.pipeline.StreamStage;
 
+import java.util.List;
 import java.util.Properties;
 
 import static com.hazelcast.function.ComparatorEx.comparing;
@@ -32,14 +33,14 @@ public class Q05HotItems extends BenchmarkBase {
                 .withNativeTimestamps(0);
 
         // NEXMark Query 5 start
-        return bids
+        StreamStage<WindowResult<List<KeyedWindowResult<Long, Long>>>> queryResult = bids
                 .window(sliding(windowSize, slideBy))
                 .groupingKey(Bid::auctionId)
                 .aggregate(counting())
                 .window(tumbling(slideBy))
-                .aggregate(topN(10, comparing(KeyedWindowResult::result)))
+                .aggregate(topN(10, comparing(KeyedWindowResult::result)));
         // NEXMark Query 5 end
 
-                .apply(stage -> determineLatency(stage, WindowResult::end));
+        return queryResult.apply(stage -> determineLatency(stage, WindowResult::end));
     }
 }

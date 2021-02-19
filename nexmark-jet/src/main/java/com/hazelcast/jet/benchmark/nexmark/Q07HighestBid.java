@@ -44,12 +44,13 @@ public class Q07HighestBid extends BenchmarkBase {
                 .readFrom(eventSource(eventsPerSecond, INITIAL_SOURCE_DELAY_MILLIS,
                         (seq, timestamp) -> new Bid(seq, timestamp, seq, getRandom(seq, max(1, seq / 100)))))
                 .withNativeTimestamps(0);
+
         // NEXMark Query 7 start
-        return bids
+        StreamStage<WindowResult<Bid>> queryResult = bids
                 .window(tumbling(tumblingWindowSizeMillis))
-                .aggregate(maxBy(comparing(Bid::price)))
+                .aggregate(maxBy(comparing(Bid::price)));
         // NEXMark Query 7 end
 
-                .apply(stage -> determineLatency(stage, WindowResult::end));
+        return queryResult.apply(stage -> determineLatency(stage, WindowResult::end));
     }
 }

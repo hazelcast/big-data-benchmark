@@ -23,10 +23,11 @@ public class Q01CurrencyConversion extends BenchmarkBase {
                 .withNativeTimestamps(0);
 
         // NEXMark Query 1 start
-        return input
-                .map(bid1 -> new Bid(bid1.id(), bid1.timestamp(), bid1.auctionId(), bid1.price() * 8 / 10))
+        StreamStage<Bid> queryResult = input
+                .map(bid1 -> new Bid(bid1.id(), bid1.timestamp(), bid1.auctionId(), bid1.price() * 8 / 10));
         // NEXMark Query 1 end
 
+        return queryResult
                 .filter(bid -> bid.id() % sievingFactor == 0)
                 .apply(stage -> determineLatency(stage, Bid::timestamp));
     }
