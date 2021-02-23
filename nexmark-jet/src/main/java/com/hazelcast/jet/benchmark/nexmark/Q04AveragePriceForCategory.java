@@ -1,8 +1,5 @@
 package com.hazelcast.jet.benchmark.nexmark;
 
-import com.hazelcast.jet.accumulator.MutableReference;
-import com.hazelcast.jet.aggregate.AggregateOperation;
-import com.hazelcast.jet.aggregate.AggregateOperation1;
 import com.hazelcast.jet.benchmark.nexmark.model.Auction;
 import com.hazelcast.jet.benchmark.nexmark.model.Bid;
 import com.hazelcast.jet.datamodel.Tuple2;
@@ -12,8 +9,10 @@ import com.hazelcast.jet.pipeline.StreamStage;
 
 import java.util.Properties;
 
+import static com.hazelcast.function.ComparatorEx.comparingLong;
 import static com.hazelcast.jet.aggregate.AggregateOperations.allOf;
 import static com.hazelcast.jet.aggregate.AggregateOperations.averagingLong;
+import static com.hazelcast.jet.aggregate.AggregateOperations.maxBy;
 import static com.hazelcast.jet.benchmark.nexmark.EventSourceP.eventSource;
 import static com.hazelcast.jet.benchmark.nexmark.JoinAuctionToWinningBidP.joinAuctionToWinningBid;
 import static com.hazelcast.jet.datamodel.Tuple3.tuple3;
@@ -59,7 +58,7 @@ public class Q04AveragePriceForCategory extends BenchmarkBase {
                 .apply(joinAuctionToWinningBid(auctionMaxDuration)) // Tuple2(auction, winningBid)
                 .map(t -> tuple3(t.f0().category(), t.f1().price(), t.f0().expires())) // "catPriceExpires"
                 .groupingKey(Tuple3::f0)
-                .rollingAggregate(allOf(averagingLong(Tuple3::f1), lastSeen()))
+                .rollingAggregate(allOf(averagingLong(Tuple3::f1), maxBy(comparingLong(Tuple3::f2))))
                 .map(catAndAggrResults -> {
                     int category = catAndAggrResults.getKey();
                     Tuple2<Double, Tuple3<Integer, Long, Long>> aggrResults = catAndAggrResults.getValue();
@@ -72,12 +71,5 @@ public class Q04AveragePriceForCategory extends BenchmarkBase {
 
         // queryResult: Tuple3(category, averagePrice, latestAuctionEnd)
         return queryResult.apply(determineLatency(Tuple3::f2));
-    }
-
-    static <T> AggregateOperation1<T, MutableReference<T>, T> lastSeen() {
-        return AggregateOperation
-                .withCreate(MutableReference<T>::new)
-                .andAccumulate(MutableReference<T>::set)
-                .andExportFinish(MutableReference::get);
     }
 }
