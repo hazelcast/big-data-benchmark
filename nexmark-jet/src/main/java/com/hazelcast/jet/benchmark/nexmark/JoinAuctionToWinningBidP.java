@@ -45,7 +45,7 @@ public class JoinAuctionToWinningBidP extends AbstractProcessor {
      */
     private final Map<Long, Bid> auctionIdToMaxBid = new HashMap<>();
 
-    private Traverser<JetEvent<Tuple2<Auction, Bid>>> outputTraverser;
+    private Traverser<Object> outputTraverser;
     private long nextCleanUpTime;
     private long watermarkTimestamp;
 
@@ -91,7 +91,8 @@ public class JoinAuctionToWinningBidP extends AbstractProcessor {
                     .flatMap(Traversers::traverseIterable)
                     .map(auction -> tuple2(auction, auctionIdToMaxBid.remove(auction.id())))
                     .filter(t2 -> t2.f1() != null)
-                    .map(t2 -> jetEvent(t2.f0().expires(), t2))
+                    .map(t2 -> (Object) jetEvent(t2.f0().expires(), t2))
+                    .append(watermark)
                     .onFirstNull(() -> {
                         expiredAuctions.clear();
                         outputTraverser = null;
