@@ -1,5 +1,7 @@
 package com.hazelcast.jet.benchmark.nexmark;
 
+import com.hazelcast.jet.aggregate.AggregateOperation;
+import com.hazelcast.jet.aggregate.AggregateOperation1;
 import com.hazelcast.jet.benchmark.nexmark.model.Auction;
 import com.hazelcast.jet.benchmark.nexmark.model.Person;
 import com.hazelcast.jet.datamodel.KeyedWindowResult;
@@ -11,7 +13,6 @@ import com.hazelcast.jet.pipeline.StreamStage;
 import java.util.Properties;
 
 import static com.hazelcast.jet.aggregate.AggregateOperations.counting;
-import static com.hazelcast.jet.aggregate.AggregateOperations.pickAny;
 import static com.hazelcast.jet.benchmark.nexmark.EventSourceP.eventSource;
 import static com.hazelcast.jet.pipeline.WindowDefinition.sliding;
 
@@ -56,4 +57,14 @@ public class Q08MonitorNewUsers extends BenchmarkBase {
                 .filter(kwr -> kwr.key() % sievingFactor == 0)
                 .apply(determineLatency(WindowResult::end));
     }
+
+    public static <T> AggregateOperation1<T, PickAnyAccumulator<T>, T> pickAny() {
+        return AggregateOperation
+                .withCreate(PickAnyAccumulator<T>::new)
+                .<T>andAccumulate(PickAnyAccumulator::accumulate)
+                .andCombine(PickAnyAccumulator::combine)
+                .andDeduct(PickAnyAccumulator::deduct)
+                .andExportFinish(PickAnyAccumulator::get);
+    }
+
 }
