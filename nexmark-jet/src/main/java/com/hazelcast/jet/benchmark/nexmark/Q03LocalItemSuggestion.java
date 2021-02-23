@@ -43,8 +43,8 @@ public class Q03LocalItemSuggestion extends BenchmarkBase {
         int auctionsPerSeller = 100;
         long ttl = (long) numDistinctKeys * auctionsPerSeller * 1000 / auctionsPerSecond;
 
-        StreamStage<Object> persons = pipeline
-                .readFrom(eventSource(auctionsPerSecond / auctionsPerSeller, INITIAL_SOURCE_DELAY_MILLIS,
+        StreamStage<Object> sellers = pipeline
+                .readFrom(eventSource("sellers", auctionsPerSecond / auctionsPerSeller, INITIAL_SOURCE_DELAY_MILLIS,
                         (seq, timestamp) -> {
                             long id = seq;
                             return new Person(id, timestamp, "Seller #" + id, STATES[seq.intValue() % STATES.length]);
@@ -54,7 +54,7 @@ public class Q03LocalItemSuggestion extends BenchmarkBase {
                 .map(p -> p); // upcast
 
         StreamStage<Auction> auctions = pipeline
-                .readFrom(eventSource(auctionsPerSecond, INITIAL_SOURCE_DELAY_MILLIS, (seq, timestamp) -> {
+                .readFrom(eventSource("auctions", auctionsPerSecond, INITIAL_SOURCE_DELAY_MILLIS, (seq, timestamp) -> {
                     long sellerId = seq / auctionsPerSeller - getRandom(seq, numDistinctKeys);
                     if (sellerId < 0) {
                         return new Auction(seq, timestamp, 0, 1, 0); // will be filtered out
@@ -66,7 +66,7 @@ public class Q03LocalItemSuggestion extends BenchmarkBase {
                 .filter(a -> a.category() == 0);
 
         // NEXMark Query 3 start
-        StreamStage<Tuple5<String, String, Long, Long, Integer>> queryResult = persons
+        StreamStage<Tuple5<String, String, Long, Long, Integer>> queryResult = sellers
                 .merge(auctions)
                 .groupingKey(o -> o instanceof Person ? ((Person) o).id() : ((Auction) o).sellerId())
                 .flatMapStateful(ttl, JoinAuctionToSeller::new, JoinAuctionToSeller::flatMap,

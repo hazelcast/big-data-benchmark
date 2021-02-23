@@ -25,6 +25,7 @@ public class EventSourceP extends AbstractProcessor {
     private static final long THROUGHPUT_REPORT_PERIOD_NANOS =
             MILLISECONDS.toNanos(SOURCE_THROUGHPUT_REPORTING_PERIOD_MILLIS);
     private static final long HICCUP_REPORT_THRESHOLD_MILLIS = 10;
+    private static final long WM_LAG_THRESHOLD_MILLIS = 10;
 
     private final long itemsPerSecond;
     private final long startTime;
@@ -32,6 +33,7 @@ public class EventSourceP extends AbstractProcessor {
     private final long wmGranularity;
     private final long wmOffset;
     private final BiFunctionEx<? super Long, ? super Long, ?> createEventFn;
+    private String name;
     private int globalProcessorIndex;
     private int totalParallelism;
     private long emitPeriod;
@@ -60,6 +62,7 @@ public class EventSourceP extends AbstractProcessor {
 
     @Override
     protected void init(Context context) {
+        name = context.vertexName();
         totalParallelism = context.totalParallelism();
         globalProcessorIndex = context.globalProcessorIndex();
         emitPeriod = SECONDS.toNanos(1) * totalParallelism / itemsPerSecond;
@@ -69,10 +72,10 @@ public class EventSourceP extends AbstractProcessor {
 
     @SuppressWarnings("SameParameterValue")
     public static <T> StreamSource<T> eventSource(
-            long eventsPerSecond, long initialDelayMs,
+            String name, long eventsPerSecond, long initialDelayMs,
             BiFunctionEx<? super Long, ? super Long, ? extends T> createEventFn
     ) {
-        return Sources.streamFromProcessorWithWatermarks("longs", true, eventTimePolicy -> ProcessorMetaSupplier.of(
+        return Sources.streamFromProcessorWithWatermarks(name, true, eventTimePolicy -> ProcessorMetaSupplier.of(
                 (Address ignored) -> {
                     long startTime = System.currentTimeMillis() + initialDelayMs;
                     return ProcessorSupplier.of(() ->
@@ -104,25 +107,44 @@ public class EventSourceP extends AbstractProcessor {
 
     @SuppressWarnings("ResultOfMethodCallIgnored")
     private void emitEvents() {
-        while (emitFromTraverser(traverser) && emitSchedule <= nowNanos) {
-            long timestamp = NANOSECONDS.toMillis(emitSchedule) - nanoTimeMillisToCurrentTimeMillis;
+        if (!emitFromTraverser(traverser)) {
+            return;
+        }
+        if (emitSchedule > nowNanos) {
+            maybeEmitWm(nanoTimeToCurrentTimeMillis(nowNanos));
+            emitFromTraverser(traverser);
+            return;
+        }
+        do {
+            long timestamp = nanoTimeToCurrentTimeMillis(emitSchedule);
             long seq = counter * totalParallelism + globalProcessorIndex;
             Object event = createEventFn.apply(seq, timestamp);
             traverser.append(jetEvent(timestamp, event));
             counter++;
             emitSchedule += emitPeriod;
-            if (timestamp >= lastEmittedWm + wmGranularity) {
-                long wmToEmit = timestamp - (timestamp % wmGranularity) + wmOffset;
-                traverser.append(new Watermark(wmToEmit));
-                lastEmittedWm = wmToEmit;
-            }
+            maybeEmitWm(timestamp);
+        } while (emitFromTraverser(traverser) && emitSchedule <= nowNanos);
+    }
+
+    @SuppressWarnings("ResultOfMethodCallIgnored")
+    private void maybeEmitWm(long timestamp) {
+        if (timestamp < lastEmittedWm + wmGranularity) {
+            return;
         }
+        long wmToEmit = timestamp - (timestamp % wmGranularity) + wmOffset;
+        long nowMillis = nanoTimeToCurrentTimeMillis(nowNanos);
+        long wmLag = nowMillis - wmToEmit;
+        if (wmLag > WM_LAG_THRESHOLD_MILLIS) {
+            System.out.format("%s#%d: WM is %,d ms behind real time%n", name, globalProcessorIndex, wmLag);
+        }
+        traverser.append(new Watermark(wmToEmit));
+        lastEmittedWm = wmToEmit;
     }
 
     private void detectAndReportHiccup() {
         long millisSinceLastCall = NANOSECONDS.toMillis(nowNanos - lastCallNanos);
         if (millisSinceLastCall > HICCUP_REPORT_THRESHOLD_MILLIS) {
-            System.out.printf("*** Source #%d hiccup: %,d ms%n", globalProcessorIndex, millisSinceLastCall);
+            System.out.printf("*** %s#%d hiccup: %,d ms%n", name, globalProcessorIndex, millisSinceLastCall);
         }
         lastCallNanos = nowNanos;
     }
@@ -137,12 +159,17 @@ public class EventSourceP extends AbstractProcessor {
         counterAtLastReport = counter;
         double throughput = itemCountSinceLastReport / ((double) nanosSinceLastReport / SECONDS.toNanos(1));
         if (throughput >= (double) SOURCE_THROUGHPUT_REPORTING_THRESHOLD / totalParallelism) {
-            System.out.printf("%,d p%d: %,.0f items/second%n",
+            System.out.printf("%,d p%s#%d: %,.0f items/second%n",
                     simpleTime(NANOSECONDS.toMillis(nowNanos)),
+                    name,
                     globalProcessorIndex,
                     throughput
             );
         }
+    }
+
+    private long nanoTimeToCurrentTimeMillis(long nanoTime) {
+        return NANOSECONDS.toMillis(nanoTime) - nanoTimeMillisToCurrentTimeMillis;
     }
 
     @Override

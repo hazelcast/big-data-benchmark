@@ -72,6 +72,7 @@ public abstract class BenchmarkBase {
         jobCfg.registerSerializer(Auction.class, Auction.AuctionSerializer.class);
         jobCfg.registerSerializer(Bid.class, Bid.BidSerializer.class);
         jobCfg.registerSerializer(Person.class, Person.PersonSerializer.class);
+        jobCfg.registerSerializer(PickAnyAccumulator.class, PickAnyAccumulator.PickAnyAccumulatorSerializer.class);
         var jet = Jet.bootstrappedInstance();
         try {
             int eventsPerSecond = parseIntProp(props, PROP_EVENTS_PER_SECOND);

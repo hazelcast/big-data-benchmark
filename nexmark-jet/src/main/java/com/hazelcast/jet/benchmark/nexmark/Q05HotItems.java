@@ -28,7 +28,7 @@ public class Q05HotItems extends BenchmarkBase {
         int windowSize = parseIntProp(props, PROP_WINDOW_SIZE_MILLIS);
         long slideBy = parseIntProp(props, PROP_SLIDING_STEP_MILLIS);
         StreamStage<Bid> bids = pipeline
-                .readFrom(eventSource(eventsPerSecond, INITIAL_SOURCE_DELAY_MILLIS, (seq, timestamp) ->
+                .readFrom(eventSource("bids", eventsPerSecond, INITIAL_SOURCE_DELAY_MILLIS, (seq, timestamp) ->
                         new Bid(seq, timestamp, seq % numDistinctKeys, 0)))
                 .withNativeTimestamps(0);
 

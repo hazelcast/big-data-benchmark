@@ -23,7 +23,7 @@ public class Q02Selection extends BenchmarkBase {
         int sievingFactor = Math.max(1, eventsPerSecond / (8192 * auctionIdModulus));
 
         StreamStage<Bid> bids = pipeline
-                .readFrom(eventSource(eventsPerSecond, INITIAL_SOURCE_DELAY_MILLIS, (seq, timestamp) ->
+                .readFrom(eventSource("bids", eventsPerSecond, INITIAL_SOURCE_DELAY_MILLIS, (seq, timestamp) ->
                         new Bid(seq, timestamp, seq % numDistinctKeys, getRandom(seq, 100))))
                 .withNativeTimestamps(0);
 

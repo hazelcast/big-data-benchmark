@@ -17,7 +17,7 @@ public class Q01CurrencyConversion extends BenchmarkBase {
         int numDistinctKeys = parseIntProp(props, PROP_NUM_DISTINCT_KEYS);
         int sievingFactor = eventsPerSecond / 8192;
         var input = pipeline
-                .readFrom(eventSource(
+                .readFrom(eventSource("bids",
                         eventsPerSecond, INITIAL_SOURCE_DELAY_MILLIS, (seq, timestamp) ->
                                 new Bid(seq, timestamp, seq % numDistinctKeys, getRandom(seq, 100))))
                 .withNativeTimestamps(0);

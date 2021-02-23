@@ -40,7 +40,7 @@ public class Q07HighestBid extends BenchmarkBase {
         int tumblingWindowSizeMillis = parseIntProp(props, PROP_WINDOW_SIZE_MILLIS);
 
         StreamStage<Bid> bids = pipeline
-                .readFrom(eventSource(eventsPerSecond, INITIAL_SOURCE_DELAY_MILLIS,
+                .readFrom(eventSource("bids", eventsPerSecond, INITIAL_SOURCE_DELAY_MILLIS,
                         (seq, timestamp) -> new Bid(seq, timestamp, seq, getRandom(seq, max(1, seq / 100)))))
                 .withNativeTimestamps(0);
 

@@ -52,7 +52,7 @@ public class Q06AvgSellingPrice extends BenchmarkBase {
         // auctionId = seq / bidsPerAuction
 
         StreamStage<Object> auctions = pipeline
-                .<Object>readFrom(eventSource(bidsPerSecond / bidsPerAuction, INITIAL_SOURCE_DELAY_MILLIS,
+                .<Object>readFrom(eventSource("auctions", bidsPerSecond / bidsPerAuction, INITIAL_SOURCE_DELAY_MILLIS,
                         (seq, timestamp) -> {
                             long sellerId = getRandom(137 * seq, numDistinctKeys);
                             long duration = auctionMinDuration +
@@ -63,7 +63,7 @@ public class Q06AvgSellingPrice extends BenchmarkBase {
                 .withNativeTimestamps(0);
 
         StreamStage<Bid> bids = pipeline
-                .readFrom(eventSource(bidsPerSecond, INITIAL_SOURCE_DELAY_MILLIS,
+                .readFrom(eventSource("bids", bidsPerSecond, INITIAL_SOURCE_DELAY_MILLIS,
                         (seq, timestamp) -> {
                             long price = getRandom(seq, maxBid);
                             long auctionId = seq / bidsPerAuction;

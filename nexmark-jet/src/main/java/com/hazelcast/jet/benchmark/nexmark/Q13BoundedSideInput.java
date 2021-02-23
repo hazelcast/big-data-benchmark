@@ -34,7 +34,7 @@ public class Q13BoundedSideInput extends BenchmarkBase {
         BatchStage<Entry<Long, String>> itemDescriptions =
                 pipeline.readFrom(TestSources.items(descriptionList));
         StreamStage<Bid> bids = pipeline
-                .readFrom(eventSource(eventsPerSecond, INITIAL_SOURCE_DELAY_MILLIS, (seq, timestamp) ->
+                .readFrom(eventSource("bids", eventsPerSecond, INITIAL_SOURCE_DELAY_MILLIS, (seq, timestamp) ->
                         new Bid(seq, timestamp, seq % numDistinctKeys, 0)))
                 .withNativeTimestamps(0);
 
