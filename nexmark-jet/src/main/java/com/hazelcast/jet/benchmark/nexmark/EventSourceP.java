@@ -11,6 +11,8 @@ import com.hazelcast.jet.core.Watermark;
 import com.hazelcast.jet.pipeline.Sources;
 import com.hazelcast.jet.pipeline.StreamSource;
 
+import javax.annotation.Nonnull;
+
 import static com.hazelcast.jet.impl.JetEvent.jetEvent;
 import static java.util.concurrent.TimeUnit.HOURS;
 import static java.util.concurrent.TimeUnit.MILLISECONDS;
@@ -18,14 +20,14 @@ import static java.util.concurrent.TimeUnit.NANOSECONDS;
 import static java.util.concurrent.TimeUnit.SECONDS;
 
 public class EventSourceP extends AbstractProcessor {
-    static final long SOURCE_THROUGHPUT_REPORTING_THRESHOLD = 30_000_000;
+    private static final long THROUGHPUT_REPORTING_THRESHOLD = 3_500_000;
 
-    private static final long SOURCE_THROUGHPUT_REPORTING_PERIOD_MILLIS = 10;
+    private static final long SOURCE_THROUGHPUT_REPORTING_PERIOD_MILLIS = 10_000;
     private static final long SIMPLE_TIME_SPAN_MILLIS = HOURS.toMillis(3);
     private static final long THROUGHPUT_REPORT_PERIOD_NANOS =
             MILLISECONDS.toNanos(SOURCE_THROUGHPUT_REPORTING_PERIOD_MILLIS);
     private static final long HICCUP_REPORT_THRESHOLD_MILLIS = 10;
-    private static final long WM_LAG_THRESHOLD_MILLIS = 10;
+    private static final long WM_LAG_THRESHOLD_MILLIS = 20;
 
     private final long itemsPerSecond;
     private final long startTime;
@@ -158,7 +160,7 @@ public class EventSourceP extends AbstractProcessor {
         long itemCountSinceLastReport = counter - counterAtLastReport;
         counterAtLastReport = counter;
         double throughput = itemCountSinceLastReport / ((double) nanosSinceLastReport / SECONDS.toNanos(1));
-        if (throughput >= (double) SOURCE_THROUGHPUT_REPORTING_THRESHOLD / totalParallelism) {
+        if (throughput >= (double) THROUGHPUT_REPORTING_THRESHOLD) {
             System.out.printf("%,d p%s#%d: %,.0f items/second%n",
                     simpleTime(NANOSECONDS.toMillis(nowNanos)),
                     name,
@@ -173,7 +175,7 @@ public class EventSourceP extends AbstractProcessor {
     }
 
     @Override
-    public boolean tryProcessWatermark(Watermark watermark) {
+    public boolean tryProcessWatermark(@Nonnull Watermark watermark) {
         throw new UnsupportedOperationException("Source processor shouldn't be asked to process a watermark");
     }
 }

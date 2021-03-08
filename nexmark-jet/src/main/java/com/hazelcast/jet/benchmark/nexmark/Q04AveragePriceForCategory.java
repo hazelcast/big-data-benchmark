@@ -17,6 +17,7 @@ import static com.hazelcast.jet.benchmark.nexmark.EventSourceP.eventSource;
 import static com.hazelcast.jet.benchmark.nexmark.JoinAuctionToWinningBidP.joinAuctionToWinningBid;
 import static com.hazelcast.jet.datamodel.Tuple3.tuple3;
 import static java.lang.Math.max;
+import static java.lang.Math.min;
 
 public class Q04AveragePriceForCategory extends BenchmarkBase {
 
@@ -26,10 +27,15 @@ public class Q04AveragePriceForCategory extends BenchmarkBase {
     ) throws ValidationException {
         int numDistinctKeys = parseIntProp(props, PROP_NUM_DISTINCT_KEYS);
         int bidsPerSecond = parseIntProp(props, PROP_EVENTS_PER_SECOND);
-        int auctionsPerSecond = 1000;
-        int bidsPerAuction = max(1, bidsPerSecond / auctionsPerSecond);
-        long auctionMinDuration = (long) numDistinctKeys * bidsPerAuction * 1000 / bidsPerSecond;
-        long auctionMaxDuration = 2 * auctionMinDuration;
+        int auctionsPerSecond = min(1000, max(1000, bidsPerSecond));
+        int bidsPerAuction = bidsPerSecond / auctionsPerSecond;
+
+        // Mean duration of the auctions determines the number of keys stored
+        // in the joining stage (joinAuctionToWinningBid). We randomize the
+        // duration between 1/2 and 3/2 of the requested number so the average
+        // comes out to 2.
+        long auctionMinDuration = numDistinctKeys * 1000L / auctionsPerSecond / 2;
+        long auctionMaxDuration = 3 * auctionMinDuration;
         System.out.format("Auction duration: %,d .. %,d ms%n", auctionMinDuration, auctionMaxDuration);
 
         // We generate auctions at rate bidsPerSecond / bidsPerAuction.
@@ -37,7 +43,7 @@ public class Q04AveragePriceForCategory extends BenchmarkBase {
         // auctionId = seq / bidsPerAuction
 
         StreamStage<Object> auctions = pipeline
-                .<Object>readFrom(eventSource("auctions", bidsPerSecond / bidsPerAuction, INITIAL_SOURCE_DELAY_MILLIS,
+                .<Object>readFrom(eventSource("auctions", auctionsPerSecond, INITIAL_SOURCE_DELAY_MILLIS,
                         (seq, timestamp) -> {
                             long sellerId = getRandom(137 * seq, numDistinctKeys);
                             long duration = auctionMinDuration +
