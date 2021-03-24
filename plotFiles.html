@@ -23,7 +23,7 @@ Derivative work by Hazelcast Inc.
 <script type="text/javascript">
 
     if (window.File && window.FileReader && window.FileList && window.Blob) {
-        // Great success! All the File APIs are supported.
+        // All the File APIs are supported.
     } else {
         alert('The File APIs are not fully supported in this browser.');
     }
@@ -32,15 +32,15 @@ Derivative work by Hazelcast Inc.
     google.load('visualization', '1.0', {'packages':['corechart']});
 
     // Set a callback to run when the Google Visualization API is loaded.
-    google.setOnLoadCallback(drawInitialChart);
+    google.setOnLoadCallback(function() {
+        document.getElementById('files').addEventListener('change', handleFileSelect, false);
+    })
 
     var chartData = null;
     var chart = null;
-
     var maxPercentile = 10000;
 
     function drawChart() {
-
         var ticks = [
             {v:1,f:'0%'},
             {v:10,f:'90%'},
@@ -57,24 +57,36 @@ Derivative work by Hazelcast Inc.
         var unitSelIndex = unitSelection.selectedIndex;
         var unitText = unitSelection.options[unitSelIndex].innerHTML;
 
+        var baseFontSize = 18;
+        var titleFontSize = 22;
         var options = {
-            title: 'Exactly-Once Guarantee',
-            height: 600,
-            width: 900,
-            //backgroundColor: { fill: "#fffdfa" },
+            title: 'Hazelcast Jet Latency',
+            width: 1200,
+            height: 900,
+            //backgroundColor: { fill: "#fffdfa" }, // background color on jet-start.sh
             series: {
                 0: { color: '#ea4335' },  // red
                 1: { color: '#93c47d' },  // green
                 2: { color: '#4285f4' },  // blue
                 3: { color: '#fbbc04' },  // yellow
             },
+            titleTextStyle: { fontSize: titleFontSize },
+            legend: { textStyle: { fontSize: baseFontSize } },
             hAxis: {
                 title: "Percentile",
                 minValue: 1, logScale: true, ticks:ticks,
                 viewWindowMode: 'explicit',
-                viewWindow: { min:1, max:maxPercentile }
+                viewWindow: { min: 1, max: maxPercentile },
+                textStyle: { fontSize: baseFontSize },
+                titleFontSize: baseFontSize
             },
-            vAxis: {title: 'Latency (' + unitText + ')', minValue: 0, maxValue: 14 },
+            vAxis: {
+                title: 'Latency (' + unitText + ')',
+                minValue: 0,
+                maxValue: 14,
+                textStyle: { fontSize: baseFontSize },
+                titleFontSize: baseFontSize
+            },
             legend: {position: 'bottom'}
         };
 
@@ -113,21 +125,6 @@ Derivative work by Hazelcast Inc.
             allSeries = appendDataSeries(histos[i], names[i], allSeries);
         }
         chartData = google.visualization.arrayToDataTable(allSeries);
-    }
-
-    function drawInitialChart() {
-        // Connect the choose files button:
-        document.getElementById('files').addEventListener('change', handleFileSelect, false);
-
-        // Load some static example data:
-        var data1Str = document.querySelector("div#data_1").innerHTML.trim();
-        var data2Str = document.querySelector("div#data_2").innerHTML.trim();
-        var data3Str = document.querySelector("div#data_3").innerHTML.trim();
-        var histos = [data3Str, data2Str, data1Str];
-        var names = ['A', 'B', 'C'];
-
-        setChartData(names, histos);
-        drawChart();
     }
 
     /*
@@ -192,10 +189,6 @@ Derivative work by Hazelcast Inc.
             xIndex++;
         }
         return chartData;
-    }
-
-    function timeUnitsSelected(evt) {
-        drawChart();
     }
 
     function doExport(event) {
@@ -324,9 +317,7 @@ Derivative work by Hazelcast Inc.
 
                 var svg = doctype + outer.innerHTML;
                 var uri = 'data:image/svg+xml;base64,' + window.btoa(unescape(encodeURIComponent(svg)));
-                if (cb) {
-                    cb(uri);
-                }
+                cb(uri);
             });
         }
 
@@ -372,7 +363,7 @@ Derivative work by Hazelcast Inc.
 <div id="chart_div">None Loaded</div>
 
 Latency time units:
-<select name="units" size="1" id="timeUnitSelection" onChange="timeUnitsSelected()">
+<select name="units" size="1" id="timeUnitSelection" onChange="drawChart()">
     <option value="Latency (seconds)">seconds</option>
     <option selected value="Latency (milliseconds)">milliseconds</option>
     <option value="Latency (µs)">microseconds</option>
