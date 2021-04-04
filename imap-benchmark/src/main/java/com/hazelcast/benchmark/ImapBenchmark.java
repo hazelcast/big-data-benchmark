@@ -103,14 +103,18 @@ public class ImapBenchmark implements Runnable {
                     PROP_MEASUREMENT_SECONDS, measurementSeconds
             );
             System.out.println();
-            boolean didTerminate = executorService.awaitTermination(
-                    warmupSeconds + measurementSeconds + 30, SECONDS);
+            int benchmarkSeconds = (int) MILLISECONDS.toSeconds(initialDelayMillis) + warmupSeconds + measurementSeconds;
+            int gracePeriodSeconds = 30;
+            int timeoutSeconds = benchmarkSeconds + gracePeriodSeconds;
+            boolean didTerminate = executorService.awaitTermination(timeoutSeconds, SECONDS);
             if (!didTerminate) {
-                System.err.println("Benchmark seems to be stuck. Aborting.");
+                System.err.format(
+                        "This benchmark is taking too long. It was supposed to take %,d seconds,%n" +
+                        "and now it's already been %,d seconds. Max latency would be at least %,d%n" +
+                        "seconds. Aborting.", benchmarkSeconds, timeoutSeconds, gracePeriodSeconds);
                 executorService.shutdownNow();
                 //noinspection ResultOfMethodCallIgnored
                 executorService.awaitTermination(2, SECONDS);
-                System.exit(1);
             }
             Histogram latencyHisto = benchmarkTasks
                     .stream()
