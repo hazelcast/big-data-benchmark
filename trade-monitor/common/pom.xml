@@ -6,7 +6,7 @@
 
     <artifactId>common</artifactId>
     <parent>
-        <groupId>com.hazelcast.jet.benchmark</groupId>
+        <groupId>com.hazelcast.benchmark</groupId>
         <artifactId>trade-monitor</artifactId>
         <version>1.0-SNAPSHOT</version>
     </parent>
