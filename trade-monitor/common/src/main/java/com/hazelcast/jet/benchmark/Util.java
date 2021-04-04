@@ -63,7 +63,11 @@ public final class Util {
     public static int parseIntProp(Properties props, String propName) throws ValidationException {
         String prop = ensureProp(props, propName);
         try {
-            return Integer.parseInt(prop.replace("_", ""));
+            int value = Integer.parseInt(prop.replace("_", ""));
+            if (value <= 0) {
+                throw new ValidationException("Value must not be negative: " + propName + "=" + prop);
+            }
+            return value;
         } catch (NumberFormatException e) {
             throw new ValidationException("Invalid property format, correct example is 9_999: " + propName + "=" + prop);
         }
