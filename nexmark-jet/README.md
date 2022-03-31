@@ -1,6 +1,6 @@
 This benchmark was used to create results described in [this blog post](https://jet-start.sh/blog/2021/03/17/billion-events-per-second).
 
-To achieve same results you need to create 45 instances of ```c5.4xlarge``` on AWS, and run the
+To achieve the same results you need to create 45 instances of ```c5.4xlarge``` on the AWS, and run the
 ```Q05HotItems``` benchmark with settings:
 
 ```properties
