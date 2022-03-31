@@ -1,11 +1,11 @@
-package com.hazelcast.jet.benchmark.nexmark;
+package hazelcast.jet.benchmark.nexmark;
 
-import com.hazelcast.jet.benchmark.nexmark.model.Auction;
-import com.hazelcast.jet.benchmark.nexmark.model.Bid;
 import com.hazelcast.jet.datamodel.Tuple2;
 import com.hazelcast.jet.datamodel.Tuple3;
 import com.hazelcast.jet.pipeline.Pipeline;
 import com.hazelcast.jet.pipeline.StreamStage;
+import hazelcast.jet.benchmark.nexmark.model.Auction;
+import hazelcast.jet.benchmark.nexmark.model.Bid;
 
 import java.util.Properties;
 
@@ -13,9 +13,9 @@ import static com.hazelcast.function.ComparatorEx.comparingLong;
 import static com.hazelcast.jet.aggregate.AggregateOperations.allOf;
 import static com.hazelcast.jet.aggregate.AggregateOperations.averagingLong;
 import static com.hazelcast.jet.aggregate.AggregateOperations.maxBy;
-import static com.hazelcast.jet.benchmark.nexmark.EventSourceP.eventSource;
-import static com.hazelcast.jet.benchmark.nexmark.JoinAuctionToWinningBidP.joinAuctionToWinningBid;
 import static com.hazelcast.jet.datamodel.Tuple3.tuple3;
+import static hazelcast.jet.benchmark.nexmark.EventSourceP.eventSource;
+import static hazelcast.jet.benchmark.nexmark.JoinAuctionToWinningBidP.joinAuctionToWinningBid;
 import static java.lang.Math.max;
 import static java.lang.Math.min;
 

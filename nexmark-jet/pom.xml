@@ -29,7 +29,7 @@
                 <configuration>
                     <archive>
                         <manifest>
-                            <mainClass>com.hazelcast.jet.benchmark.nexmark.BenchmarkBase</mainClass>
+                            <mainClass>hazelcast.jet.benchmark.nexmark.BenchmarkBase</mainClass>
                         </manifest>
                     </archive>
                 </configuration>

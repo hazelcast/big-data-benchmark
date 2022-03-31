@@ -1,4 +1,4 @@
-package com.hazelcast.jet.benchmark.nexmark;
+package hazelcast.jet.benchmark.nexmark;
 
 import com.hazelcast.jet.core.AbstractProcessor;
 import com.hazelcast.jet.core.Watermark;

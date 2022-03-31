@@ -1,16 +1,16 @@
-package com.hazelcast.jet.benchmark.nexmark;
+package hazelcast.jet.benchmark.nexmark;
 
-import com.hazelcast.jet.benchmark.nexmark.model.Bid;
 import com.hazelcast.jet.datamodel.Tuple2;
 import com.hazelcast.jet.datamodel.WindowResult;
 import com.hazelcast.jet.pipeline.Pipeline;
 import com.hazelcast.jet.pipeline.StreamStage;
+import hazelcast.jet.benchmark.nexmark.model.Bid;
 
 import java.util.Properties;
 
 import static com.hazelcast.jet.aggregate.AggregateOperations.counting;
-import static com.hazelcast.jet.benchmark.nexmark.EventSourceP.eventSource;
 import static com.hazelcast.jet.pipeline.WindowDefinition.sliding;
+import static hazelcast.jet.benchmark.nexmark.EventSourceP.eventSource;
 
 /**
  * Not a benchmark, just a tool to confirm the source generates
