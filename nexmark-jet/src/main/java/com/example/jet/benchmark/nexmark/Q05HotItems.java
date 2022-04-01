@@ -1,21 +1,21 @@
-package hazelcast.jet.benchmark.nexmark;
+package com.example.jet.benchmark.nexmark;
 
+import com.example.jet.benchmark.nexmark.model.Bid;
 import com.hazelcast.jet.datamodel.KeyedWindowResult;
 import com.hazelcast.jet.datamodel.Tuple2;
 import com.hazelcast.jet.datamodel.WindowResult;
 import com.hazelcast.jet.pipeline.Pipeline;
 import com.hazelcast.jet.pipeline.StreamStage;
-import hazelcast.jet.benchmark.nexmark.model.Bid;
 
 import java.util.List;
 import java.util.Properties;
 
+import static com.example.jet.benchmark.nexmark.EventSourceP.eventSource;
 import static com.hazelcast.function.ComparatorEx.comparing;
 import static com.hazelcast.jet.aggregate.AggregateOperations.counting;
 import static com.hazelcast.jet.aggregate.AggregateOperations.topN;
 import static com.hazelcast.jet.pipeline.WindowDefinition.sliding;
 import static com.hazelcast.jet.pipeline.WindowDefinition.tumbling;
-import static hazelcast.jet.benchmark.nexmark.EventSourceP.eventSource;
 
 public class Q05HotItems extends BenchmarkBase {
 

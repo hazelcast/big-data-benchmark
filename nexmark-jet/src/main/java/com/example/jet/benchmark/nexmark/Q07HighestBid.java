@@ -14,20 +14,20 @@
  * limitations under the License.
  */
 
-package hazelcast.jet.benchmark.nexmark;
+package com.example.jet.benchmark.nexmark;
 
+import com.example.jet.benchmark.nexmark.model.Bid;
 import com.hazelcast.function.ComparatorEx;
 import com.hazelcast.jet.datamodel.Tuple2;
 import com.hazelcast.jet.datamodel.WindowResult;
 import com.hazelcast.jet.pipeline.Pipeline;
 import com.hazelcast.jet.pipeline.StreamStage;
-import hazelcast.jet.benchmark.nexmark.model.Bid;
 
 import java.util.Properties;
 
+import static com.example.jet.benchmark.nexmark.EventSourceP.eventSource;
 import static com.hazelcast.jet.aggregate.AggregateOperations.maxBy;
 import static com.hazelcast.jet.pipeline.WindowDefinition.tumbling;
-import static hazelcast.jet.benchmark.nexmark.EventSourceP.eventSource;
 import static java.lang.Math.max;
 
 public class Q07HighestBid extends BenchmarkBase {

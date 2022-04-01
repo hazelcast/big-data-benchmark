@@ -1,15 +1,15 @@
-package hazelcast.jet.benchmark.nexmark;
+package com.example.jet.benchmark.nexmark;
 
+import com.example.jet.benchmark.nexmark.model.Bid;
 import com.hazelcast.jet.datamodel.Tuple2;
 import com.hazelcast.jet.datamodel.Tuple3;
 import com.hazelcast.jet.pipeline.Pipeline;
 import com.hazelcast.jet.pipeline.StreamStage;
-import hazelcast.jet.benchmark.nexmark.model.Bid;
 
 import java.util.Properties;
 
+import static com.example.jet.benchmark.nexmark.EventSourceP.eventSource;
 import static com.hazelcast.jet.datamodel.Tuple3.tuple3;
-import static hazelcast.jet.benchmark.nexmark.EventSourceP.eventSource;
 
 public class Q02Selection extends BenchmarkBase {
 

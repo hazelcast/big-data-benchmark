@@ -14,21 +14,19 @@
  * limitations under the License.
  */
 
-package hazelcast.jet.benchmark.nexmark;
+package com.example.jet.benchmark.nexmark;
 
+import com.example.jet.benchmark.nexmark.model.Auction;
+import com.example.jet.benchmark.nexmark.model.Bid;
 import com.hazelcast.jet.datamodel.Tuple2;
 import com.hazelcast.jet.pipeline.Pipeline;
 import com.hazelcast.jet.pipeline.StreamStage;
-import hazelcast.jet.benchmark.nexmark.model.Auction;
-import hazelcast.jet.benchmark.nexmark.model.Bid;
 
 import java.util.ArrayDeque;
 import java.util.OptionalDouble;
 import java.util.Properties;
 
 import static com.hazelcast.jet.datamodel.Tuple2.tuple2;
-import static hazelcast.jet.benchmark.nexmark.EventSourceP.eventSource;
-import static hazelcast.jet.benchmark.nexmark.JoinAuctionToWinningBidP.joinAuctionToWinningBid;
 import static java.lang.Math.max;
 
 public class Q06AvgSellingPrice extends BenchmarkBase {
@@ -52,7 +50,7 @@ public class Q06AvgSellingPrice extends BenchmarkBase {
         // auctionId = seq / bidsPerAuction
 
         StreamStage<Object> auctions = pipeline
-                .<Object>readFrom(eventSource("auctions", bidsPerSecond / bidsPerAuction, INITIAL_SOURCE_DELAY_MILLIS,
+                .<Object>readFrom(EventSourceP.eventSource("auctions", bidsPerSecond / bidsPerAuction, INITIAL_SOURCE_DELAY_MILLIS,
                         (seq, timestamp) -> {
                             long sellerId = getRandom(137 * seq, numDistinctKeys);
                             long duration = auctionMinDuration +
@@ -63,7 +61,7 @@ public class Q06AvgSellingPrice extends BenchmarkBase {
                 .withNativeTimestamps(0);
 
         StreamStage<Bid> bids = pipeline
-                .readFrom(eventSource("bids", bidsPerSecond, INITIAL_SOURCE_DELAY_MILLIS,
+                .readFrom(EventSourceP.eventSource("bids", bidsPerSecond, INITIAL_SOURCE_DELAY_MILLIS,
                         (seq, timestamp) -> {
                             long price = getRandom(seq, maxBid);
                             long auctionId = seq / bidsPerAuction;
@@ -74,7 +72,7 @@ public class Q06AvgSellingPrice extends BenchmarkBase {
         // NEXMark Query 6 start
         StreamStage<Tuple2<OptionalDouble, Long>> queryResult = auctions
                 .merge(bids)
-                .apply(joinAuctionToWinningBid(auctionMaxDuration))
+                .apply(JoinAuctionToWinningBidP.joinAuctionToWinningBid(auctionMaxDuration))
                 .groupingKey(auctionAndBid -> auctionAndBid.f0().sellerId())
                 .mapStateful(() -> new ArrayDeque<Long>(windowItemCount),
                         (deque, key, item) -> {

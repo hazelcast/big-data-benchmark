@@ -1,20 +1,20 @@
-package hazelcast.jet.benchmark.nexmark;
+package com.example.jet.benchmark.nexmark;
 
+import com.example.jet.benchmark.nexmark.model.Bid;
 import com.hazelcast.jet.datamodel.Tuple2;
 import com.hazelcast.jet.pipeline.BatchStage;
 import com.hazelcast.jet.pipeline.Pipeline;
 import com.hazelcast.jet.pipeline.StreamStage;
 import com.hazelcast.jet.pipeline.test.TestSources;
-import hazelcast.jet.benchmark.nexmark.model.Bid;
 
 import java.util.List;
 import java.util.Map.Entry;
 import java.util.Properties;
 import java.util.stream.IntStream;
 
+import static com.example.jet.benchmark.nexmark.EventSourceP.eventSource;
 import static com.hazelcast.jet.Util.entry;
 import static com.hazelcast.jet.pipeline.JoinClause.joinMapEntries;
-import static hazelcast.jet.benchmark.nexmark.EventSourceP.eventSource;
 import static java.util.stream.Collectors.toList;
 
 public class Q13BoundedSideInput extends BenchmarkBase {
