@@ -1,12 +1,12 @@
-package com.hazelcast.jet.benchmark.nexmark;
+package com.example.jet.benchmark.nexmark;
 
+import com.example.jet.benchmark.nexmark.model.Auction;
+import com.example.jet.benchmark.nexmark.model.Bid;
+import com.example.jet.benchmark.nexmark.model.Person;
 import com.hazelcast.function.FunctionEx;
 import com.hazelcast.internal.util.HashUtil;
 import com.hazelcast.jet.Jet;
 import com.hazelcast.jet.accumulator.LongLongAccumulator;
-import com.hazelcast.jet.benchmark.nexmark.model.Auction;
-import com.hazelcast.jet.benchmark.nexmark.model.Bid;
-import com.hazelcast.jet.benchmark.nexmark.model.Person;
 import com.hazelcast.jet.config.JobConfig;
 import com.hazelcast.jet.config.ProcessingGuarantee;
 import com.hazelcast.jet.datamodel.Tuple2;
@@ -24,7 +24,7 @@ import java.io.PrintStream;
 import java.io.Serializable;
 import java.util.Properties;
 
-import static com.hazelcast.jet.benchmark.nexmark.EventSourceP.simpleTime;
+import static com.example.jet.benchmark.nexmark.EventSourceP.simpleTime;
 import static com.hazelcast.jet.datamodel.Tuple2.tuple2;
 import static java.lang.Integer.parseInt;
 import static java.util.concurrent.TimeUnit.SECONDS;

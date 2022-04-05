@@ -1,9 +1,9 @@
-package com.hazelcast.jet.benchmark.nexmark;
+package com.example.jet.benchmark.nexmark;
 
+import com.example.jet.benchmark.nexmark.model.Auction;
+import com.example.jet.benchmark.nexmark.model.Person;
 import com.hazelcast.jet.aggregate.AggregateOperation;
 import com.hazelcast.jet.aggregate.AggregateOperation1;
-import com.hazelcast.jet.benchmark.nexmark.model.Auction;
-import com.hazelcast.jet.benchmark.nexmark.model.Person;
 import com.hazelcast.jet.datamodel.KeyedWindowResult;
 import com.hazelcast.jet.datamodel.Tuple2;
 import com.hazelcast.jet.datamodel.WindowResult;
@@ -12,8 +12,8 @@ import com.hazelcast.jet.pipeline.StreamStage;
 
 import java.util.Properties;
 
+import static com.example.jet.benchmark.nexmark.EventSourceP.eventSource;
 import static com.hazelcast.jet.aggregate.AggregateOperations.counting;
-import static com.hazelcast.jet.benchmark.nexmark.EventSourceP.eventSource;
 import static com.hazelcast.jet.pipeline.WindowDefinition.sliding;
 
 public class Q08MonitorNewUsers extends BenchmarkBase {

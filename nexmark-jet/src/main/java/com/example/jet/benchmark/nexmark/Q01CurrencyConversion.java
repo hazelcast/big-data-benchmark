@@ -1,13 +1,13 @@
-package com.hazelcast.jet.benchmark.nexmark;
+package com.example.jet.benchmark.nexmark;
 
-import com.hazelcast.jet.benchmark.nexmark.model.Bid;
+import com.example.jet.benchmark.nexmark.model.Bid;
 import com.hazelcast.jet.datamodel.Tuple2;
 import com.hazelcast.jet.pipeline.Pipeline;
 import com.hazelcast.jet.pipeline.StreamStage;
 
 import java.util.Properties;
 
-import static com.hazelcast.jet.benchmark.nexmark.EventSourceP.eventSource;
+import static com.example.jet.benchmark.nexmark.EventSourceP.eventSource;
 
 public class Q01CurrencyConversion extends BenchmarkBase {
 

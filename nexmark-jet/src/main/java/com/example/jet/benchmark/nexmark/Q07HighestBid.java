@@ -14,9 +14,10 @@
  * limitations under the License.
  */
 
-package com.hazelcast.jet.benchmark.nexmark;
+package com.example.jet.benchmark.nexmark;
 
-import com.hazelcast.jet.benchmark.nexmark.model.Bid;
+import com.example.jet.benchmark.nexmark.model.Bid;
+import com.hazelcast.function.ComparatorEx;
 import com.hazelcast.jet.datamodel.Tuple2;
 import com.hazelcast.jet.datamodel.WindowResult;
 import com.hazelcast.jet.pipeline.Pipeline;
@@ -24,9 +25,8 @@ import com.hazelcast.jet.pipeline.StreamStage;
 
 import java.util.Properties;
 
-import static com.hazelcast.function.ComparatorEx.comparing;
+import static com.example.jet.benchmark.nexmark.EventSourceP.eventSource;
 import static com.hazelcast.jet.aggregate.AggregateOperations.maxBy;
-import static com.hazelcast.jet.benchmark.nexmark.EventSourceP.eventSource;
 import static com.hazelcast.jet.pipeline.WindowDefinition.tumbling;
 import static java.lang.Math.max;
 
@@ -47,7 +47,7 @@ public class Q07HighestBid extends BenchmarkBase {
         // NEXMark Query 7 start
         StreamStage<WindowResult<Bid>> queryResult = bids
                 .window(tumbling(tumblingWindowSizeMillis))
-                .aggregate(maxBy(comparing(Bid::price)));
+                .aggregate(maxBy(ComparatorEx.comparing(Bid::price)));
         // NEXMark Query 7 end
 
         return queryResult.apply(determineLatency(WindowResult::end));

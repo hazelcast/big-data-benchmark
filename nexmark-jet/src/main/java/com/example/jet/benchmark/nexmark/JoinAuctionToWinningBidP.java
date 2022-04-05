@@ -1,10 +1,10 @@
-package com.hazelcast.jet.benchmark.nexmark;
+package com.example.jet.benchmark.nexmark;
 
+import com.example.jet.benchmark.nexmark.model.Auction;
+import com.example.jet.benchmark.nexmark.model.Bid;
 import com.hazelcast.function.FunctionEx;
 import com.hazelcast.jet.Traverser;
 import com.hazelcast.jet.Traversers;
-import com.hazelcast.jet.benchmark.nexmark.model.Auction;
-import com.hazelcast.jet.benchmark.nexmark.model.Bid;
 import com.hazelcast.jet.core.AbstractProcessor;
 import com.hazelcast.jet.core.Watermark;
 import com.hazelcast.jet.datamodel.Tuple2;

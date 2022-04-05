@@ -1,4 +1,4 @@
-package com.hazelcast.jet.benchmark.nexmark.model;
+package com.example.jet.benchmark.nexmark.model;
 
 import com.hazelcast.nio.ObjectDataInput;
 import com.hazelcast.nio.ObjectDataOutput;

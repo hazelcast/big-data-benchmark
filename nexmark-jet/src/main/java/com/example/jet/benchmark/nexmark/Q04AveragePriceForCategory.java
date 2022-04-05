@@ -1,7 +1,7 @@
-package com.hazelcast.jet.benchmark.nexmark;
+package com.example.jet.benchmark.nexmark;
 
-import com.hazelcast.jet.benchmark.nexmark.model.Auction;
-import com.hazelcast.jet.benchmark.nexmark.model.Bid;
+import com.example.jet.benchmark.nexmark.model.Auction;
+import com.example.jet.benchmark.nexmark.model.Bid;
 import com.hazelcast.jet.datamodel.Tuple2;
 import com.hazelcast.jet.datamodel.Tuple3;
 import com.hazelcast.jet.pipeline.Pipeline;
@@ -9,12 +9,11 @@ import com.hazelcast.jet.pipeline.StreamStage;
 
 import java.util.Properties;
 
+import static com.example.jet.benchmark.nexmark.EventSourceP.eventSource;
 import static com.hazelcast.function.ComparatorEx.comparingLong;
 import static com.hazelcast.jet.aggregate.AggregateOperations.allOf;
 import static com.hazelcast.jet.aggregate.AggregateOperations.averagingLong;
 import static com.hazelcast.jet.aggregate.AggregateOperations.maxBy;
-import static com.hazelcast.jet.benchmark.nexmark.EventSourceP.eventSource;
-import static com.hazelcast.jet.benchmark.nexmark.JoinAuctionToWinningBidP.joinAuctionToWinningBid;
 import static com.hazelcast.jet.datamodel.Tuple3.tuple3;
 import static java.lang.Math.max;
 import static java.lang.Math.min;
@@ -61,7 +60,7 @@ public class Q04AveragePriceForCategory extends BenchmarkBase {
         // NEXMark Query 4 start
         StreamStage<Tuple3<Integer, Double, Long>> queryResult = auctions
                 .merge(bids)
-                .apply(joinAuctionToWinningBid(auctionMaxDuration)) // Tuple2(auction, winningBid)
+                .apply(JoinAuctionToWinningBidP.joinAuctionToWinningBid(auctionMaxDuration)) // Tuple2(auction, winningBid)
                 .map(t -> tuple3(t.f0().category(), t.f1().price(), t.f0().expires())) // "catPriceExpires"
                 .groupingKey(Tuple3::f0)
                 .rollingAggregate(allOf(averagingLong(Tuple3::f1), maxBy(comparingLong(Tuple3::f2))))

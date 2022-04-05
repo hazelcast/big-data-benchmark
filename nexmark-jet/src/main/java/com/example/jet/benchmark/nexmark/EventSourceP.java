@@ -1,4 +1,4 @@
-package com.hazelcast.jet.benchmark.nexmark;
+package com.example.jet.benchmark.nexmark;
 
 import com.hazelcast.cluster.Address;
 import com.hazelcast.function.BiFunctionEx;

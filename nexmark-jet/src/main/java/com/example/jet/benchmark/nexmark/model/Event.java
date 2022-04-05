@@ -1,4 +1,4 @@
-package com.hazelcast.jet.benchmark.nexmark.model;
+package com.example.jet.benchmark.nexmark.model;
 
 public class Event {
 

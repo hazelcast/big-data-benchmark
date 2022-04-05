@@ -1,8 +1,8 @@
-package com.hazelcast.jet.benchmark.nexmark;
+package com.example.jet.benchmark.nexmark;
 
+import com.example.jet.benchmark.nexmark.model.Auction;
+import com.example.jet.benchmark.nexmark.model.Person;
 import com.hazelcast.jet.Traverser;
-import com.hazelcast.jet.benchmark.nexmark.model.Auction;
-import com.hazelcast.jet.benchmark.nexmark.model.Person;
 import com.hazelcast.jet.datamodel.Tuple2;
 import com.hazelcast.jet.datamodel.Tuple5;
 import com.hazelcast.jet.pipeline.Pipeline;
@@ -13,10 +13,10 @@ import java.util.ArrayList;
 import java.util.List;
 import java.util.Properties;
 
+import static com.example.jet.benchmark.nexmark.EventSourceP.eventSource;
 import static com.hazelcast.jet.Traversers.empty;
 import static com.hazelcast.jet.Traversers.singleton;
 import static com.hazelcast.jet.Traversers.traverseIterable;
-import static com.hazelcast.jet.benchmark.nexmark.EventSourceP.eventSource;
 import static com.hazelcast.jet.datamodel.Tuple5.tuple5;
 
 public class Q03LocalItemSuggestion extends BenchmarkBase {
