@@ -7,7 +7,7 @@ To achieve the same results you need to create 45 instances of ```c5.4xlarge``` 
 events-per-second=1_000_000_000
 num-distinct-keys=10_000
 window-size-millis=10_000
-sliding-step-millis=20
+sliding-step-millis=500
 processing-guarantee=none
 snapshot-interval-millis=1_000
 warmup-seconds=150
