@@ -11,7 +11,7 @@
     </parent>
 
     <properties>
-        <jet.3.2.version>3.2.2</jet.3.2.version>
+        <jet.3.2.version>4.5.4</jet.3.2.version>
     </properties>
 
     <build>
